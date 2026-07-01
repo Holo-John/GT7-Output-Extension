@@ -323,6 +323,9 @@ class GT7Export(inkex.OutputExtension):
             return 0.0
             
     def round_floats_in_string(self, s, digits=3):
+        if not s:
+            return ""
+        
         # Matches:
         #   12.34
         #   -12.34

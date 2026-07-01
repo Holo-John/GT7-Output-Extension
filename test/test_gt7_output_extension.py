@@ -11,7 +11,7 @@ from test.InkscapeWrapper import (
 from src.gt7_export import GT7Export
 
 
-GRADIENT_SUITE = pathlib.Path("test/gradients")
+GRADIENT_SUITE = pathlib.Path("assets/gradients")
 
 
 def discover_svg_files():
