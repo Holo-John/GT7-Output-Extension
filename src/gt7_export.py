@@ -39,8 +39,10 @@ class GT7Export(inkex.OutputExtension):
     PRESENTATION_ATTRS = {
         "fill", "fill-opacity", "stroke", "stroke-width", "stroke-opacity",
         "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
-        "opacity", "clip-path", "mask", "filter", "fill-rule"
+        "opacity", "clip-path", "mask", "filter", "fill-rule",
+        "stop-color", "stop-opacity",
     }
+
 
     PAINT_SERVER_TAGS = {
         "linearGradient",
@@ -244,9 +246,9 @@ class GT7Export(inkex.OutputExtension):
         # ---------------------------------------------------------
         # Strip STOP IDs immediately
         # ---------------------------------------------------------
-        if tag == "stop":
+        if tag in { "stop", "defs" }:
             node.attrib.pop("id", None)
-            self.log(logging.DEBUG, f"[ADD_NODE]   STOP element → stripping ID")
+            self.log(logging.DEBUG, f"[ADD_NODE]   {tag} element → stripping ID")
         else:
             # ---------------------------------------------------------
             # Assign ID to gradients, paths, groups, etc.
@@ -493,7 +495,8 @@ class GT7Export(inkex.OutputExtension):
 
             # CSS overrides presentation attributes
             for prop, value in style.items():
-                elem.set(prop, str(value))
+                if prop in self.PRESENTATION_ATTRS:
+                    elem.set(prop, str(value))
 
             del elem.attrib["style"]
             count += 1
@@ -1171,30 +1174,33 @@ class GT7Export(inkex.OutputExtension):
         return referenced
         
     def cleanup_defs(self):
-        # Modern inkex root access
-        root = self.svg
-
-        # Find the <defs> element
-        defs = root.find(".//{http://www.w3.org/2000/svg}defs")
+        defs = self.svg.find(".//{http://www.w3.org/2000/svg}defs")
         if defs is None:
             return
 
-        referenced = self.collect_referenced_ids()
+        while True:
+            referenced = self.collect_referenced_ids()
+            removed_any = False
 
-        for child in list(defs):
-            cid = child.get("id")
-            if not cid:
-                continue
+            for child in list(defs):
+                cid = child.get("id")
+                if not cid:
+                    continue
 
-            if cid not in referenced:
-                self.log(logging.DEBUG,
-                    f"[DEFS] Removing unused defs child id={cid} tag={child.tag_name}"
-                )
-                defs.remove(child)
-            else:
-                self.log(logging.DEBUG,
-                    f"[DEFS] Keeping defs child id={cid}"
-                )
+                if cid not in referenced:
+                    self.log(logging.DEBUG,
+                        f"[DEFS] Removing unused defs child id={cid} tag={child.tag_name}"
+                    )
+                    defs.remove(child)
+                    removed_any = True
+                else:
+                    self.log(logging.DEBUG,
+                        f"[DEFS] Keeping defs child id={cid}"
+                    )
+
+            if not removed_any:
+                break
+
 
 
 #--- Clean Attributes ---
