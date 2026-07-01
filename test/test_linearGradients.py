@@ -16,12 +16,12 @@ GRADIENT_SUITE = pathlib.Path("assets")
 
 def discover_svg_files():
     """Yield (case_name, svg_path) for each SVG file in the suite directory."""
-    for svg_file in GRADIENT_SUITE.glob("*.svg"):
+    for svg_file in GRADIENT_SUITE.glob("**/*.svg"):
         yield svg_file.stem, svg_file
 
 
-@pytest.mark.parametrize("case_name, svg_path", discover_svg_files())
-def test_gradient_case(case_name, svg_path):
+@pytest.mark.parametrize("case_name, svg_path", list(discover_svg_files()))
+def test_linearGradients_case(case_name, svg_path):
     print(f"\n=== Running gradient test case: {case_name} ===")
 
     tmpdir = tempfile.mkdtemp()

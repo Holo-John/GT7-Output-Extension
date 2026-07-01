@@ -20,7 +20,7 @@ def discover_svg_files():
         yield svg_file.stem, svg_file
 
 
-@pytest.mark.parametrize("case_name, svg_path", discover_svg_files())
+@pytest.mark.parametrize("case_name, svg_path", list(discover_svg_files()))
 def test_uses_case(case_name, svg_path):
     print(f"\n=== Running gradient test case: {case_name} ===")
 
