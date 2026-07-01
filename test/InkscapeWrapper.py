@@ -10,6 +10,7 @@ from skimage.metrics import structural_similarity as ssim
 import numpy as np
 import numpy.typing as npt
 from typing import cast, Tuple
+import matplotlib.pyplot as plt
 
 INKSCAPE = r"C:\Program Files\Inkscape\bin\inkscape.exe"
 
@@ -50,12 +51,6 @@ def render_svg_to_png(svg_path, png_path):
         svg_path
     ], check=True)
 
-from typing import Tuple
-import numpy as np
-import numpy.typing as npt
-from skimage.metrics import structural_similarity as ssim
-from skimage import io as skio
-
 
 def compare_images(img1_path: str, img2_path: str) -> Tuple[float, npt.NDArray[np.float64]]:
     img1 = skio.imread(img1_path)
@@ -76,3 +71,9 @@ def compare_images(img1_path: str, img2_path: str) -> Tuple[float, npt.NDArray[n
         score, diff = result # type: ignore
 
     return score, diff
+
+
+
+def save_diff_image(diff, path):
+    plt.imsave(path, diff, cmap="gray")
+

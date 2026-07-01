@@ -12,17 +12,17 @@ from test.InkscapeWrapper import (
 from src.gt7_export import GT7Export
 
 
-GRADIENT_SUITE = pathlib.Path("assets/uses")
+GRADIENT_SUITE = pathlib.Path("assets/radialGradients")
 
 
 def discover_svg_files():
     """Yield (case_name, svg_path) for each SVG file in the suite directory."""
-    for svg_file in GRADIENT_SUITE.glob("*.svg"):
+    for svg_file in GRADIENT_SUITE.glob("**/*.svg"):
         yield svg_file.stem, svg_file
 
 
 @pytest.mark.parametrize("case_name, svg_path", list(discover_svg_files()))
-def test_uses_case(case_name, svg_path):
+def test_radialGradients_case(case_name, svg_path):
     print(f"\n=== Running gradient test case: {case_name} ===")
 
     tmpdir = tempfile.mkdtemp()
@@ -68,3 +68,4 @@ def test_uses_case(case_name, svg_path):
         os.rmdir(tmpdir)
     except Exception:
         pass
+

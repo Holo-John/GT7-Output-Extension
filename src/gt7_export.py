@@ -1639,17 +1639,14 @@ class GT7Export(inkex.OutputExtension):
     def apply_gradient_transform_matrix(self, grad, t):
         tag = self.tag_name(grad)
 
-        # Unpack matrix in SVG order
         (a, c, e), (b, d, f) = t.matrix
 
         if tag == "linearGradient":
-            # Read coordinates
             x1 = float(grad.get("x1", "0"))
             y1 = float(grad.get("y1", "0"))
             x2 = float(grad.get("x2", "0"))
             y2 = float(grad.get("y2", "0"))
 
-            # Apply matrix
             grad.set("x1", str(a * x1 + c * y1 + e))
             grad.set("y1", str(b * x1 + d * y1 + f))
             grad.set("x2", str(a * x2 + c * y2 + e))
@@ -1664,10 +1661,21 @@ class GT7Export(inkex.OutputExtension):
             grad.set("cx", str(a * cx + c * cy + e))
             grad.set("cy", str(b * cx + d * cy + f))
 
-            # Uniform scale only → preserve circle
-            # (a == d and b == 0 and c == 0)
+            # --- radius logic ---
+            # Pure translation → do NOT scale r
+            if a == 1 and d == 1 and b == 0 and c == 0:
+                return
+
+            # Uniform scale → scale r
             if b == 0 and c == 0 and a == d:
                 grad.set("r", str(r * abs(a)))
+                return
+
+            # Non-uniform scale → GT7-unsafe (ellipse)
+            # You may choose to warn, clamp, or approximate
+            # For now: leave r unchanged
+            return
+
 
     def clone_gradient(self, grad):
         # Determine gradient type using svg‑API tag resolution
