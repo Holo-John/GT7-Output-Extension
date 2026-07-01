@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297" version="1.1" id="svg1"><sodipodi:namedview xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" id="namedview1" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#d1d1d1" inkscape:document-units="mm" inkscape:zoom="2.9606624" inkscape:cx="169.55665" inkscape:cy="102.17308" inkscape:window-width="2560" inkscape:window-height="1377" inkscape:window-x="-8" inkscape:window-y="-8" inkscape:window-maximized="1" inkscape:current-layer="layer1"/>
+  <defs xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:xlink="http://www.w3.org/1999/xlink" id="defs1">
+    <linearGradient id="linearGradient1" inkscape:collect="always">
+      <stop offset="0" id="stop1" stop-color="#00ffff" stop-opacity="1"/>
+      <stop offset="1" id="stop2" stop-color="#ff8000" stop-opacity="1"/>
+    </linearGradient>
+    <linearGradient inkscape:collect="always" x1="0" y1="42.426" x2="0" y2="70.711" gradientUnits="userSpaceOnUse" id="L1"><stop offset="0" id="S1" stop-color="#00ffff"/>
+      <stop offset="1" id="S2" stop-color="#ff8000"/>
+    </linearGradient></defs>
+  <path d="M 0 42.426 L 14.142 56.569 L 0 70.711 L -14.142 56.569 z" fill="url(#L1)" id="P1"/></svg>
