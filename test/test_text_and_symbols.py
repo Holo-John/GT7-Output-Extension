@@ -12,7 +12,7 @@ from test.InkscapeWrapper import (
 from src.gt7_export import GT7Export
 
 
-GRADIENT_SUITE = pathlib.Path("assets/text_and_glyphs")
+GRADIENT_SUITE = pathlib.Path("assets/text_and_symbols")
 
 
 def discover_svg_files():
@@ -22,7 +22,7 @@ def discover_svg_files():
 
 
 @pytest.mark.parametrize("case_name, svg_path", list(discover_svg_files()))
-def test_textAndGlyphs_case(case_name, svg_path):
+def test_text_and_symbols_case(case_name, svg_path):
     print(f"\n=== Running gradient test case: {case_name} ===")
 
     tmpdir = tempfile.mkdtemp()

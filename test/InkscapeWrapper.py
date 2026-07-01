@@ -1,10 +1,8 @@
 import io
-import inkex
+import os
 import tempfile
 import subprocess
 import inkex
-import tempfile
-import io
 from skimage import io as skio
 from skimage.metrics import structural_similarity as ssim
 import numpy as np
@@ -13,6 +11,15 @@ from typing import cast, Tuple
 import matplotlib.pyplot as plt
 
 INKSCAPE = r"C:\Program Files\Inkscape\bin\inkscape.exe"
+
+# Ensure Inkex uses the same executable when it shells out to Inkscape.
+os.environ.setdefault("INKSCAPE_EXE", INKSCAPE)
+
+try:
+    import inkex.command as inkex_command
+    inkex_command.INKSCAPE_EXECUTABLE_NAME = INKSCAPE
+except Exception:
+    pass
 
 def run_extension_on_svg(extension_class, svg_path):
     """

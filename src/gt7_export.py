@@ -163,9 +163,7 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.INFO, f"inkex loaded from: {inspect.getfile(inkex)}")
             self.log(logging.INFO, f"inkex version: {getattr(inkex, '__version__', 'NO VERSION ATTRIBUTE')}")
 
-            
-
-            
+            self.preprocess(types_to_path=["text"], unlink_clones=True)
             
             self.resolve_styles_to_attributes()
             self.resolve_references()
