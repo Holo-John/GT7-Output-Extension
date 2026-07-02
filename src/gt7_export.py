@@ -166,6 +166,7 @@ class GT7Export(inkex.OutputExtension):
             self.preprocess(types_to_path=["text"], unlink_clones=True)
             
             self.resolve_styles_to_attributes()
+            self.expand_all_uses()
             self.resolve_references()
             self.replace_unsupported_shapes()
             
@@ -527,73 +528,109 @@ class GT7Export(inkex.OutputExtension):
                     if ref_id in old_to_new:
                         el.set(attr, f"url(#{old_to_new[ref_id]})")
             
-    def expand_use_once(self, use_el, stack):
-        ref = self.href_target(use_el)
-        if ref is None or not self.is_expandable_ref(ref):
-            return False
 
+
+    def expand_all_uses(self, node=None, visited=None):
+        """
+        Deterministically expand ALL <use> elements in the SVG using
+        post-order traversal (children first, then the node).
+
+        Guarantees:
+        - Clones never contain <use>
+        - Cycles are detected and skipped
+        - Non-expandable <use> elements are removed
+        - Only one traversal is needed
+        """
+        if node is None:
+            node = self.svg
+        if visited is None:
+            visited = set()
+
+        # --- 1. Process children first (post-order) ---
+        for child in list(node):
+            self.expand_all_uses(child, visited)
+
+        # --- 2. Process this node ---
+        if self.tag_name(node) != "use":
+            return
+
+        # Resolve reference
+        ref = self.href_target(node)
+        if ref is None or not self.is_expandable_ref(ref):
+            # Remove useless <use>
+            parent, _ = self.parent_of(node)
+            self.remove_node(node, parent)
+            return
+
+        # Cycle detection
         ref_id = ref.get("id")
-        if ref_id and ref_id in stack:
-            return False
+        if ref_id and ref_id in visited:
+            # Remove cyclic <use>
+            parent, _ = self.parent_of(node)
+            self.remove_node(node, parent)
+            return
 
         if ref_id:
-            stack = set(stack)
-            stack.add(ref_id)
+            visited = set(visited)
+            visited.add(ref_id)
 
+        # --- Clone referenced element ---
         clone = copy.deepcopy(ref)
         self.remap_ids_in_clone(clone)
 
-        self.promote_presentation_attributes(clone, use_el)
+        # Inherit presentation attributes
+        self.promote_presentation_attributes(clone, node)
 
-        clip_attr = use_el.get("clip-path")
+        # Inherit clip-path
+        clip_attr = node.get("clip-path")
         if clip_attr:
             clone.set("clip-path", clip_attr)
 
+        # Strip <use>-specific attributes
         for attr in ("href", f"{{{self.XLINK_NS}}}href", "x", "y"):
             clone.attrib.pop(attr, None)
 
-        parent, idx = self.parent_of(use_el)
+        # IMPORTANT:
+        # Because we are in post-order traversal,
+        # the referenced subtree has already been flattened.
+        # Therefore clone contains NO <use> elements.
 
+        # --- Insert wrapper group with transform ---
+        parent, idx = self.parent_of(node)
         wrapper = inkex.Group()
         self.add_node(wrapper, parent, idx)
+        self.append_transform(wrapper, self.use_transform(node))
 
-        self.append_transform(wrapper, self.use_transform(use_el))
-
+        # Attach clone
         self.add_node(clone, wrapper)
 
-        self.remove_node(use_el, parent)
+        # Remove original <use>
+        self.remove_node(node, parent)
 
-        return True
+
+
 
     def resolve_references(self):
-        use_count = 0
         grad_count = 0
+        clip_count = 0
 
-        root = self.svg
-        changed = True
-        stack = set()
+        for el in list(self.svg.iter()):
+            tag = self.tag_name(el)
 
-        while changed:
-            changed = False
+            match tag:
+                case "path" | "rect" | "circle" | "ellipse":
+                    grad_count += self.resolve_gradient_for_shape(el)
+                    clip_count += self.resolve_clippath_for_shape(el)
 
-            for el in list(root.iter()):
-                tag = self.tag_name(el)
-
-                match tag:
-                    case "use":
-                        if self.expand_use_once(el, stack):
-                            changed = True
-                            use_count += 1
-                            break
-
-                    case "path" | "rect" | "circle" | "ellipse":
-                        grad_count += self.resolve_gradient_for_shape(el)
-
-        if use_count:
-            self.log(logging.INFO, f"Expanded {use_count} <use> elements")
+                case "clippath":
+                    clip_count += self.resolve_clippath_for_shape(el)
 
         if grad_count:
             self.log(logging.INFO, f"Normalized {grad_count} gradients")
+
+        if clip_count:
+            self.log(logging.INFO, f"Resolved {clip_count} clip paths")
+
             
 
 #--- Viewbox Translation ---
@@ -2087,6 +2124,215 @@ class GT7Export(inkex.OutputExtension):
             f"x2={grad.get('x2')} y2={grad.get('y2')}"
         )
 
+#--- clipping ---
+
+    def clone_clipPath(self, cp):
+        """Clone a clipPath without copying its ID."""
+        new_cp = inkex.etree.Element(cp.tag, nsmap=cp.nsmap)
+        for key, value in cp.attrib.items():
+            if key != "id":
+                new_cp.set(key, value)
+
+        for child in cp:
+            new_cp.append(copy.deepcopy(child))
+
+        new_cp.attrib.pop("id", None)
+        for el in new_cp.iter():
+            el.attrib.pop("id", None)
+        return new_cp
+
+    def convert_shape_to_path(self, node):
+        """Convert a simple SVG shape into a path element without mutating the DOM."""
+        tag = self.tag_name(node)
+        if tag == "path":
+            return copy.deepcopy(node)
+
+        if tag == "rect":
+            x = float(node.get("x", "0"))
+            y = float(node.get("y", "0"))
+            w = float(node.get("width", "0"))
+            h = float(node.get("height", "0"))
+            d = f"M {x},{y} h {w} v {h} h {-w} z"
+        elif tag == "circle":
+            cx = float(node.get("cx", "0"))
+            cy = float(node.get("cy", "0"))
+            r = float(node.get("r", "0"))
+            d = (
+                f"M {cx - r},{cy} "
+                f"a {r},{r} 0 1,0 {2 * r},0 "
+                f"a {r},{r} 0 1,0 {-2 * r},0"
+            )
+        elif tag == "ellipse":
+            cx = float(node.get("cx", "0"))
+            cy = float(node.get("cy", "0"))
+            rx = float(node.get("rx", "0"))
+            ry = float(node.get("ry", "0"))
+            d = (
+                f"M {cx - rx},{cy} "
+                f"a {rx},{ry} 0 1,0 {2 * rx},0 "
+                f"a {rx},{ry} 0 1,0 {-2 * rx},0"
+            )
+        elif tag in {"polygon", "polyline"}:
+            points = node.get("points", "")
+            if not points.strip():
+                return copy.deepcopy(node)
+            coords = [float(v) for v in re.split(r"[ ,]+", points.strip()) if v]
+            commands = []
+            for i in range(0, len(coords), 2):
+                x, y = coords[i], coords[i + 1]
+                commands.append(f"{'M' if i == 0 else 'L'} {x},{y}")
+            if tag == "polygon":
+                commands.append("Z")
+            d = " ".join(commands)
+        elif tag == "line":
+            x1 = float(node.get("x1", "0"))
+            y1 = float(node.get("y1", "0"))
+            x2 = float(node.get("x2", "0"))
+            y2 = float(node.get("y2", "0"))
+            d = f"M {x1},{y1} L {x2},{y2}"
+        else:
+            return copy.deepcopy(node)
+
+        new_node = inkex.PathElement()
+        new_node.set("d", d)
+        self.copy_presentation_attributes(node, new_node)
+        return new_node
+
+    def apply_transform_to_path(self, node, transform):
+        """Apply a Transform to a path element's data."""
+        if self.tag_name(node) != "path":
+            return
+
+        d = node.get("d")
+        if not d:
+            return
+
+        p = inkex.Path(d).to_absolute()  # type: ignore
+        if transform is not None:
+            p = p.transform(transform)
+        node.set("d", str(p))
+
+    def resolve_clippath_chain(self, cp):
+        """
+        Resolve an entire clipPath chain:
+        - flatten href inheritance (children + attributes)
+        - flatten clipPath transforms
+        - return combined transform matrix
+        """
+
+        seen = set()
+
+        cid = cp.get("id", "")
+        self.log(logging.DEBUG, f"Resolving clipPath chain (temp id={cid})")
+
+        child_transform = cp.get("transform")
+        child_has_transform = bool(child_transform)
+
+        inherited_transform = None
+        g = cp
+
+        while True:
+            gid = g.get("id")
+            self.log(logging.DEBUG, f"  Visiting clipPath {gid}")
+
+            if gid in seen:
+                self.log(logging.DEBUG, "    STOP: cycle detected")
+                break
+            if gid:
+                seen.add(gid)
+
+            if not child_has_transform:
+                gt = g.get("transform")
+                if gt and inherited_transform is None:
+                    self.log(logging.DEBUG, f"    Inheriting parent transform: {gt}")
+                    inherited_transform = gt
+
+            href = g.get("href") or g.get(f"{{{self.XLINK_NS}}}href")
+            if not href or not href.startswith("#"):
+                self.log(logging.DEBUG, "    No href → chain ends here")
+                break
+
+            ref_id = href[1:]
+            self.log(logging.DEBUG, f"    Child href → {ref_id}")
+
+            ref = self.svg.getElementById(ref_id)
+            if ref is None:
+                self.log(logging.DEBUG, f"ERROR: referenced clipPath {ref_id} not found")
+                break
+
+            self.log(logging.DEBUG, f"    Parent clipPath found: id={ref.get('id')}")
+
+            for child in ref:
+                self.add_node(copy.deepcopy(child), cp)
+
+            cp.attrib.pop("href", None)
+            cp.attrib.pop(f"{{{self.XLINK_NS}}}href", None)
+
+            g = ref
+
+        if child_has_transform:
+            self.log(logging.DEBUG, f"  Child transform overrides parents: {child_transform}")
+            T_chain = Transform(child_transform)
+        elif inherited_transform:
+            self.log(logging.DEBUG, f"  Using inherited parent transform: {inherited_transform}")
+            T_chain = Transform(inherited_transform)
+        else:
+            self.log(logging.DEBUG, "  No transform found → identity")
+            T_chain = Transform()
+
+        cp.attrib.pop("transform", None)
+        self.log(logging.DEBUG, "  Removed transform attribute")
+
+        cid = cp.get("id", "")
+        self.log(logging.DEBUG, f"Resolved full clipPath chain for id={cid}")
+
+        return T_chain
+
+    def resolve_clippath_for_shape(self, shape):
+        """
+        For each shape using clip-path, create a flattened, GT7-safe clipPath:
+        - clone original clipPath
+        - resolve href/transform chain
+        - convert children to paths
+        - apply chain transform
+        - register new clipPath in <defs> and rewire shape
+        """
+
+        val = shape.get("clip-path")
+        if not val or not val.startswith("url(#"):
+            return 0
+
+        cp_id = val[5:-1]
+        self.log(logging.DEBUG, f"Shape {shape.get('id')} uses clipPath {cp_id}")
+
+        cp = self.svg.getElementById(cp_id)
+        if cp is None:
+            self.log(logging.DEBUG, f"  ERROR: clipPath {cp_id} not found in SVG tree")
+            return 0
+
+        new_cp = self.clone_clipPath(cp)
+        self.log(logging.DEBUG, f"  Cloned clipPath has id={new_cp.get('id')}")
+
+        T_chain = self.resolve_clippath_chain(new_cp)
+        self.log(logging.DEBUG, f"[CLIPPATH]   T_chain for {shape.get('id')}: {T_chain}")
+
+        for child in list(new_cp):
+            path = self.convert_shape_to_path(child)
+            if path is not child:
+                new_cp.remove(child)
+                self.add_node(path, new_cp)
+
+        for child in new_cp:
+            self.apply_transform_to_path(child, T_chain)
+
+        defs = self.ensure_defs()
+        self.add_node(new_cp, defs)
+
+        self.log(logging.DEBUG, f"  New clipPath id={new_cp.get('id')} assigned to shape")
+
+        shape.set("clip-path", f"url(#{new_cp.get('id')})")
+
+        return 1
 
 
 if __name__ == "__main__":
