@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
+from ast import Not
 import traceback
 import re
 import copy
+from turtle import shape
+from unittest import result
 import inkex
 from inkex.styles import Style
 from inkex.transforms import Transform
@@ -11,6 +14,9 @@ import os
 import tempfile
 import logging
 import io
+from datetime import datetime
+
+from numpy import clip
 
 LOG_LEVEL = logging.DEBUG
 
@@ -158,7 +164,8 @@ class GT7Export(inkex.OutputExtension):
         try:
             
             self.create_changelog(stream)
-            
+        
+            self.log(logging.INFO, f"Started @ {datetime.now().isoformat()}")
             self.log(logging.INFO, f"Python executable: {sys.executable}")
             self.log(logging.INFO, f"inkex loaded from: {inspect.getfile(inkex)}")
             self.log(logging.INFO, f"inkex version: {getattr(inkex, '__version__', 'NO VERSION ATTRIBUTE')}")
@@ -205,7 +212,7 @@ class GT7Export(inkex.OutputExtension):
     def generate_id(self, el):
         """
         Generate a short ID: first letter of tag name (uppercase) + counter.
-        Ensures uniqueness via svg.getElementById().
+        Ensures uniqueness via find_node().
         """
 
         tag = self.tag_name(el) or "X"
@@ -219,7 +226,7 @@ class GT7Export(inkex.OutputExtension):
             candidate = f"{prefix}{count}"
 
             # ensure uniqueness in DOM
-            if self.svg.getElementById(candidate) is None:
+            if self.find_node(candidate) is None:
                 break
 
         self.id_counters[prefix] = count
@@ -231,13 +238,26 @@ class GT7Export(inkex.OutputExtension):
         href = el.get("href") or el.get(f"{{{self.XLINK_NS}}}href")
         if not href or not href.startswith("#"):
             return None
-        return self.svg.getElementById(href[1:])
+        return self.find_node(href[1:])
 
     def parent_of(self, child):
         parent = child.getparent()
         if parent is None:
             return None, 0
         return parent, parent.index(child)
+    
+    def find_node(self, id):
+        node = self.svg.getElementById(id)
+
+        if node is None:
+            result = self.svg.xpath(f"//*[@id='{id}']")
+            node = result[0] if result else None
+
+        if node is None:
+            self.log(logging.DEBUG, f"Node with id='{id}' not found")
+
+        return node
+
 
     def add_node(self, node, parent, index=None):
         tag = node.tag.split('}')[-1]
@@ -302,15 +322,11 @@ class GT7Export(inkex.OutputExtension):
     def is_expandable_ref(self, ref_el):
         return self.tag_name(ref_el) not in self.SKIP_RESOLVE_TAGS
 
-    def copy_presentation_attributes(self, src, dst):
+    def copy_presentation_attributes(self, src, dst, override=True):
         for attr in self.PRESENTATION_ATTRS:
-            if attr in src.attrib:
+            if attr in src.attrib and (override or attr not in dst.attrib):
                 dst.set(attr, src.get(attr))
 
-    def promote_presentation_attributes(self, clone, use_el):
-        for attr in self.PRESENTATION_ATTRS:
-            if attr in use_el.attrib and attr not in clone.attrib:
-                clone.set(attr, use_el.get(attr))
                 
     def parse_number(self, value):
         if value is None:
@@ -387,6 +403,7 @@ class GT7Export(inkex.OutputExtension):
             
         combined = t @ base
         el.set("transform", str(combined))
+
         
     def transform_path(self, node, transform):
         d = node.get("d")
@@ -394,6 +411,8 @@ class GT7Export(inkex.OutputExtension):
             p = inkex.Path(d) # type: ignore
             p = p.transform(transform)
             node.set("d", str(p))
+
+        return node
             
     def transform_circle(self, node, transform):
         cx = float(node.get("cx", "0"))
@@ -406,14 +425,14 @@ class GT7Export(inkex.OutputExtension):
         if a == 1 and d == 1 and b == 0 and c == 0:
             node.set("cx", str(cx + e))
             node.set("cy", str(cy + f))
-            return
+            return node
 
         # Uniform scale (with or without translation)
         if b == 0 and c == 0 and a == d:
             node.set("cx", str(cx * a + e))
             node.set("cy", str(cy * a + f))
             node.set("r",  str(r * abs(a)))
-            return
+            return node
 
         # Pure rotation around origin
         if a == d and b == -c:
@@ -421,10 +440,10 @@ class GT7Export(inkex.OutputExtension):
             cy2 = b * cx + d * cy + f
             node.set("cx", str(cx2))
             node.set("cy", str(cy2))
-            return
+            return node
 
         # Anything else → circle becomes ellipse → convert to path
-        self.circle_to_path(node, cx, cy, r, transform)
+        return self.circle_to_path(node, cx, cy, r, transform)
     
     def transform_rect(self, node, transform):
         x = float(node.get("x", "0"))
@@ -438,7 +457,7 @@ class GT7Export(inkex.OutputExtension):
         if a == 1 and d == 1 and b == 0 and c == 0:
             node.set("x", str(x + e))
             node.set("y", str(y + f))
-            return
+            return node
 
         # Uniform scale (with or without translation)
         if b == 0 and c == 0 and a == d:
@@ -446,10 +465,10 @@ class GT7Export(inkex.OutputExtension):
             node.set("y", str(y * a + f))
             node.set("width",  str(w * abs(a)))
             node.set("height", str(h * abs(a)))
-            return
+            return node
 
         # Anything else → becomes a path
-        self.rect_to_path(node, x, y, w, h, transform)
+        return self.rect_to_path(node, x, y, w, h, transform)
 
     def transform_ellipse(self, node, transform):
         cx = float(node.get("cx", "0"))
@@ -463,7 +482,7 @@ class GT7Export(inkex.OutputExtension):
         if a == 1 and d == 1 and b == 0 and c == 0:
             node.set("cx", str(cx + e))
             node.set("cy", str(cy + f))
-            return
+            return node
 
         # Uniform scale (with or without translation)
         if b == 0 and c == 0 and a == d:
@@ -471,10 +490,10 @@ class GT7Export(inkex.OutputExtension):
             node.set("cy", str(cy * a + f))
             node.set("rx", str(rx * abs(a)))
             node.set("ry", str(ry * abs(a)))
-            return
+            return node
 
         # Anything else → becomes a path
-        self.ellipse_to_path(node, cx, cy, rx, ry, transform)
+        return self.ellipse_to_path(node, cx, cy, rx, ry, transform)
 
 
     
@@ -579,7 +598,7 @@ class GT7Export(inkex.OutputExtension):
         self.remap_ids_in_clone(clone)
 
         # Inherit presentation attributes
-        self.promote_presentation_attributes(clone, node)
+        self.copy_presentation_attributes(node, clone, override=False)
 
         # Inherit clip-path
         clip_attr = node.get("clip-path")
@@ -630,6 +649,8 @@ class GT7Export(inkex.OutputExtension):
 
         if clip_count:
             self.log(logging.INFO, f"Resolved {clip_count} clip paths")
+
+        self.log_defs()
 
             
 
@@ -935,7 +956,7 @@ class GT7Export(inkex.OutputExtension):
             grad_id = paint[5:-1]
 
             # Modern inkex API: use svg.getElementById()
-            grad = self.svg.getElementById(grad_id)
+            grad = self.find_node(grad_id)
             if grad is None:
                 continue
 
@@ -973,26 +994,95 @@ class GT7Export(inkex.OutputExtension):
             count += 1
 
         return count
+    
+    def apply_transform_to_clippath_used_by(self, node, T):
+        self.log(logging.DEBUG,
+            f"id={node.get('id')} tag={self.tag_name(node)} clip-path={node.get('clip-path')} T={T}"
+        )
+
+        clip = node.get("clip-path")
+        self.log(logging.DEBUG, f"raw clip-path={repr(clip)}")
+
+        if not clip or not clip.startswith("url(#"):
+            return 0
+
+        cp_id = clip[5:-1]
+        self.log(logging.DEBUG, f"parsed cp_id={repr(cp_id)}")
+
+        cp = self.find_node(cp_id)
+
+        self.log(logging.DEBUG, f"getElementById({repr(cp_id)}) → {cp}")
+
+        if cp is None:
+            return 0
+
+        # Flatten clipPath using the shape's transform
+        self.apply_transform_to_clippath(cp, T)
+
+        return 1
+    
+    def apply_transform_to_clippath(self, cp, M_cp):
+        """
+        Flatten transforms inside a clipPath using the shape's transform chain.
+        This is the correct SVG rule:
+            M_final_clip = M_shape * M_clipPath * M_geometry
+        """
+
+        # Flatten the clipPath's own transform
+        local = Transform(cp.get("transform"))
+        M_final = M_cp @ local
+
+        self.log(logging.DEBUG,
+            f"id={('id')} tag={self.tag_name(cp)} parent={M_cp} local={local} final={M_final}"
+        )
+
+        for child in cp:
+            tag = self.tag_name(child)
+
+            if tag == "clippath":
+                # Flatten nested clipPath using SAME M_final
+                self.apply_transform_to_clippath(child, M_final)
+                continue
+
+            # Flatten geometry inside the clipPath
+            self.apply_transform_to_node(child, M_final)
+
+            # Flatten nested groups inside clipPath
+            if tag == "g":
+                self.apply_all_transforms(child, M_final)
+
+            # Remove transform attributes
+            child.attrib.pop("transform", None)
+
+
+        return 1
+
+
 
     def apply_transform_to_node(self, node, transform):
         tag = self.tag_name(node)
 
+        self.log(logging.DEBUG,
+            f"id={node.get('id')} tag={tag} transform={transform} "
+        )
+
+
         try:
             match tag:
                 case "path":
-                    self.transform_path(node, transform)
+                    node = self.transform_path(node, transform)
 
                 case "circle":
-                    self.transform_circle(node, transform)
+                    node = self.transform_circle(node, transform)
 
                 case "ellipse":
-                    self.transform_ellipse(node, transform)
+                    node = self.transform_ellipse(node, transform)
 
                 case "rect":
-                    self.transform_rect(node, transform)
+                    node = self.transform_rect(node, transform)
 
                 case _:
-                    return 0
+                    return (0,node)
 
         except Exception as e:
             inkex.utils.debug(
@@ -1001,14 +1091,16 @@ class GT7Export(inkex.OutputExtension):
             )
             inkex.utils.debug(f"exception: {type(e).__name__}: {e}")
             inkex.utils.debug(traceback.format_exc())
-            return 0
+            return (0, node)
 
-        return 1
+        return (1, node)
         
     def apply_all_transforms(self, node=None, parent_transform=None):
         # Modern inkex root access
         if node is None:
             node = self.svg
+            self.cleanup_defs()
+            self.log_defs()
 
         if parent_transform is None:
             parent_transform = Transform()
@@ -1020,7 +1112,7 @@ class GT7Export(inkex.OutputExtension):
 
         # Skip non-geometry paint servers
         if tag in ("linearGradient", "radialGradient", "pattern",
-                   "filter", "marker", "stop"):
+                   "filter", "marker", "stop", "clipPath"):
             return count
 
         # Parse local transform safely
@@ -1033,12 +1125,7 @@ class GT7Export(inkex.OutputExtension):
         combined = parent_transform @ local_transform
 
         self.log(logging.DEBUG,
-            f"[TYPE] parent={type(parent_transform)} "
-            f"local={type(local_transform)} combined={type(combined)}"
-        )
-
-        self.log(logging.DEBUG,
-            f"apply_all_transforms id={node.get('id')} "
+            f"id={node.get('id')} "
             f"parent={parent_transform.matrix} "
             f"local={local_transform.matrix} "
             f"combined={combined.matrix}"
@@ -1049,10 +1136,13 @@ class GT7Export(inkex.OutputExtension):
             count += self.apply_all_transforms(child, combined)
 
         # Apply CTM to geometry
-        count += self.apply_transform_to_node(node, combined)
+        counted, node = self.apply_transform_to_node(node, combined)
+        count += counted
 
         # Apply CTM to gradients referenced by this node
         count += self.apply_transform_to_gradients_used_by(node, combined)
+
+        count+= self.apply_transform_to_clippath_used_by(node, combined)
 
         # Remove transform attribute after flattening
         node.attrib.pop("transform", None)
@@ -1207,8 +1297,21 @@ class GT7Export(inkex.OutputExtension):
 
         self.log(logging.DEBUG, f"[REF] Final referenced ids: {sorted(referenced)}")
         return referenced
+    
+    def normalize_defs(self):
+        defs = sdefs = self.find_node("defs3")
+        if defs is None:
+            return
+
+        for child in list(defs):
+            # Remove ANY non-element node
+            if not isinstance(child.tag, str):
+                defs.remove(child)
+
         
     def cleanup_defs(self):
+        self.normalize_defs()
+
         defs = self.svg.find(".//{http://www.w3.org/2000/svg}defs")
         if defs is None:
             return
@@ -1235,6 +1338,19 @@ class GT7Export(inkex.OutputExtension):
 
             if not removed_any:
                 break
+
+    def log_defs(self):
+        defs = self.find_node("defs3")
+        if defs is None:
+            self.log(logging.DEBUG, "No <defs> element found")
+            return
+
+        self.log(logging.DEBUG, "--- DEFS CONTENT ---")
+        for child in defs:
+            tag = self.tag_name(child)
+            cid = child.get("id")
+            self.log(logging.DEBUG, f"defs child: tag={tag} id={cid} attrib={dict(child.attrib)}")
+        self.log(logging.DEBUG, "--- END DEFS ---")
 
 
 
@@ -1834,7 +1950,7 @@ class GT7Export(inkex.OutputExtension):
             ref_id = href[1:]
             self.log(logging.DEBUG, f"[CHAIN] Child href → {ref_id}")
 
-            ref = self.svg.getElementById(ref_id)
+            ref = self.find_node(ref_id)
             if ref is None:
                 self.log(logging.DEBUG, f"ERROR: referenced gradient {ref_id} not found")
                 break
@@ -1914,7 +2030,7 @@ class GT7Export(inkex.OutputExtension):
             grad_id = val[5:-1]
             self.log(logging.DEBUG, f"Shape {shape.get('id')} uses gradient {grad_id}")
 
-            grad = self.svg.getElementById(grad_id)
+            grad = self.find_node(grad_id)
             if grad is None:
                 self.log(logging.DEBUG, f"  ERROR: gradient {grad_id} not found in SVG tree")
                 continue
@@ -2126,213 +2242,78 @@ class GT7Export(inkex.OutputExtension):
 
 #--- clipping ---
 
-    def clone_clipPath(self, cp):
-        """Clone a clipPath without copying its ID."""
-        new_cp = inkex.etree.Element(cp.tag, nsmap=cp.nsmap)
-        for key, value in cp.attrib.items():
+    def shallow_clone_node(self, node):
+        """Clone a single node without children, preserving geometry but not IDs."""
+        new = inkex.etree.Element(node.tag, nsmap=node.nsmap)
+
+        for key, value in node.attrib.items():
             if key != "id":
-                new_cp.set(key, value)
+                new.set(key, value)
+
+        # strip href/xlink:href on cloned clipPaths if desired
+        if new.tag == inkex.addNS('clipPath', 'svg'):
+            new.attrib.pop("href", None)
+            new.attrib.pop(f"{{{self.XLINK_NS}}}href", None)
+
+        return new
+
+    def deep_clone_clipPath(self, cp):
+        """
+        Clone a clipPath subtree, resolving href on any nested clipPaths.
+        - No IDs are preserved
+        - href/xlink:href are removed on clones
+        """
+
+        new_cp = self.shallow_clone_node(cp)
 
         for child in cp:
-            new_cp.append(copy.deepcopy(child))
+            # If child is a clipPath with href, resolve its chain recursively
+            if child.tag == inkex.addNS('clipPath', 'svg'):
+                href = child.get("href") or child.get(f"{{{self.XLINK_NS}}}href")
+                if href and href.startswith("#"):
+                    ref_id = href[1:]
+                    ref = self.find_node(ref_id)
+                    if ref is not None:
+                        nested = self.deep_clone_clipPath(ref)
+                        new_cp.append(nested)
+                        continue
 
+            # Otherwise, shallow‑clone node and recurse its children
+            new_child = self.shallow_clone_node(child)
+            for grand in child:
+                new_child.append(self.deep_clone_clipPath(grand) if grand.tag == inkex.addNS('clipPath', 'svg')
+                                else self.shallow_clone_node(grand))
+            new_cp.append(new_child)
+
+        # strip IDs in subtree
         new_cp.attrib.pop("id", None)
         for el in new_cp.iter():
             el.attrib.pop("id", None)
+
         return new_cp
 
-    def convert_shape_to_path(self, node):
-        """Convert a simple SVG shape into a path element without mutating the DOM."""
-        tag = self.tag_name(node)
-        if tag == "path":
-            return copy.deepcopy(node)
 
-        if tag == "rect":
-            x = float(node.get("x", "0"))
-            y = float(node.get("y", "0"))
-            w = float(node.get("width", "0"))
-            h = float(node.get("height", "0"))
-            d = f"M {x},{y} h {w} v {h} h {-w} z"
-        elif tag == "circle":
-            cx = float(node.get("cx", "0"))
-            cy = float(node.get("cy", "0"))
-            r = float(node.get("r", "0"))
-            d = (
-                f"M {cx - r},{cy} "
-                f"a {r},{r} 0 1,0 {2 * r},0 "
-                f"a {r},{r} 0 1,0 {-2 * r},0"
-            )
-        elif tag == "ellipse":
-            cx = float(node.get("cx", "0"))
-            cy = float(node.get("cy", "0"))
-            rx = float(node.get("rx", "0"))
-            ry = float(node.get("ry", "0"))
-            d = (
-                f"M {cx - rx},{cy} "
-                f"a {rx},{ry} 0 1,0 {2 * rx},0 "
-                f"a {rx},{ry} 0 1,0 {-2 * rx},0"
-            )
-        elif tag in {"polygon", "polyline"}:
-            points = node.get("points", "")
-            if not points.strip():
-                return copy.deepcopy(node)
-            coords = [float(v) for v in re.split(r"[ ,]+", points.strip()) if v]
-            commands = []
-            for i in range(0, len(coords), 2):
-                x, y = coords[i], coords[i + 1]
-                commands.append(f"{'M' if i == 0 else 'L'} {x},{y}")
-            if tag == "polygon":
-                commands.append("Z")
-            d = " ".join(commands)
-        elif tag == "line":
-            x1 = float(node.get("x1", "0"))
-            y1 = float(node.get("y1", "0"))
-            x2 = float(node.get("x2", "0"))
-            y2 = float(node.get("y2", "0"))
-            d = f"M {x1},{y1} L {x2},{y2}"
-        else:
-            return copy.deepcopy(node)
-
-        new_node = inkex.PathElement()
-        new_node.set("d", d)
-        self.copy_presentation_attributes(node, new_node)
-        return new_node
-
-    def apply_transform_to_path(self, node, transform):
-        """Apply a Transform to a path element's data."""
-        if self.tag_name(node) != "path":
-            return
-
-        d = node.get("d")
-        if not d:
-            return
-
-        p = inkex.Path(d).to_absolute()  # type: ignore
-        if transform is not None:
-            p = p.transform(transform)
-        node.set("d", str(p))
-
-    def resolve_clippath_chain(self, cp):
-        """
-        Resolve an entire clipPath chain:
-        - flatten href inheritance (children + attributes)
-        - flatten clipPath transforms
-        - return combined transform matrix
-        """
-
-        seen = set()
-
-        cid = cp.get("id", "")
-        self.log(logging.DEBUG, f"Resolving clipPath chain (temp id={cid})")
-
-        child_transform = cp.get("transform")
-        child_has_transform = bool(child_transform)
-
-        inherited_transform = None
-        g = cp
-
-        while True:
-            gid = g.get("id")
-            self.log(logging.DEBUG, f"  Visiting clipPath {gid}")
-
-            if gid in seen:
-                self.log(logging.DEBUG, "    STOP: cycle detected")
-                break
-            if gid:
-                seen.add(gid)
-
-            if not child_has_transform:
-                gt = g.get("transform")
-                if gt and inherited_transform is None:
-                    self.log(logging.DEBUG, f"    Inheriting parent transform: {gt}")
-                    inherited_transform = gt
-
-            href = g.get("href") or g.get(f"{{{self.XLINK_NS}}}href")
-            if not href or not href.startswith("#"):
-                self.log(logging.DEBUG, "    No href → chain ends here")
-                break
-
-            ref_id = href[1:]
-            self.log(logging.DEBUG, f"    Child href → {ref_id}")
-
-            ref = self.svg.getElementById(ref_id)
-            if ref is None:
-                self.log(logging.DEBUG, f"ERROR: referenced clipPath {ref_id} not found")
-                break
-
-            self.log(logging.DEBUG, f"    Parent clipPath found: id={ref.get('id')}")
-
-            for child in ref:
-                self.add_node(copy.deepcopy(child), cp)
-
-            cp.attrib.pop("href", None)
-            cp.attrib.pop(f"{{{self.XLINK_NS}}}href", None)
-
-            g = ref
-
-        if child_has_transform:
-            self.log(logging.DEBUG, f"  Child transform overrides parents: {child_transform}")
-            T_chain = Transform(child_transform)
-        elif inherited_transform:
-            self.log(logging.DEBUG, f"  Using inherited parent transform: {inherited_transform}")
-            T_chain = Transform(inherited_transform)
-        else:
-            self.log(logging.DEBUG, "  No transform found → identity")
-            T_chain = Transform()
-
-        cp.attrib.pop("transform", None)
-        self.log(logging.DEBUG, "  Removed transform attribute")
-
-        cid = cp.get("id", "")
-        self.log(logging.DEBUG, f"Resolved full clipPath chain for id={cid}")
-
-        return T_chain
 
     def resolve_clippath_for_shape(self, shape):
-        """
-        For each shape using clip-path, create a flattened, GT7-safe clipPath:
-        - clone original clipPath
-        - resolve href/transform chain
-        - convert children to paths
-        - apply chain transform
-        - register new clipPath in <defs> and rewire shape
-        """
-
         val = shape.get("clip-path")
         if not val or not val.startswith("url(#"):
             return 0
 
         cp_id = val[5:-1]
-        self.log(logging.DEBUG, f"Shape {shape.get('id')} uses clipPath {cp_id}")
-
-        cp = self.svg.getElementById(cp_id)
+        cp = self.find_node(cp_id)
         if cp is None:
-            self.log(logging.DEBUG, f"  ERROR: clipPath {cp_id} not found in SVG tree")
             return 0
 
-        new_cp = self.clone_clipPath(cp)
-        self.log(logging.DEBUG, f"  Cloned clipPath has id={new_cp.get('id')}")
-
-        T_chain = self.resolve_clippath_chain(new_cp)
-        self.log(logging.DEBUG, f"[CLIPPATH]   T_chain for {shape.get('id')}: {T_chain}")
-
-        for child in list(new_cp):
-            path = self.convert_shape_to_path(child)
-            if path is not child:
-                new_cp.remove(child)
-                self.add_node(path, new_cp)
-
-        for child in new_cp:
-            self.apply_transform_to_path(child, T_chain)
+        # Clone clipPath, resolving href chains inside it
+        new_cp = self.deep_clone_clipPath(cp)
 
         defs = self.ensure_defs()
         self.add_node(new_cp, defs)
 
-        self.log(logging.DEBUG, f"  New clipPath id={new_cp.get('id')} assigned to shape")
-
         shape.set("clip-path", f"url(#{new_cp.get('id')})")
-
         return 1
+
+
 
 
 if __name__ == "__main__":
