@@ -173,18 +173,26 @@ class GT7Export(inkex.OutputExtension):
             self.preprocess(types_to_path=["text"], unlink_clones=True)
             
             self.resolve_styles_to_attributes()
+            self.log_svg(header="BEFORE expand_all_uses()")
             self.expand_all_uses()
+            self.log_svg(header="AFTER expand_all_uses()")
             self.resolve_references()
+            self.log_svg(header="AFTER resolve_references()")
             self.replace_unsupported_shapes()
+            self.log_svg(header="AFTER replace_unsupported_shapes()")
             
             self.remove_all_groups()
+            self.log_svg(header="AFTER remove_all_groups()")
+
             transform_count = self.apply_all_transforms()
             self.log(logging.INFO, f"Resolved {transform_count} transformations into plain geometry")
+            self.log_svg(header="AFTER apply_all_transforms()")
             
             self.translate_viewbox()
             self.clean_stroke_attributes()
             self.compress_output()
             self.cleanup_defs()
+            self.log_svg(header="AFTER cleanup_defs()")
 
             svg_bytes = inkex.etree.tostring(
                 self.svg,
@@ -208,6 +216,35 @@ class GT7Export(inkex.OutputExtension):
 #--- NEW API ---
 
 #--- DOM Tree and SVG Helpers ---
+
+    def log_svg(self, node=None, indent=0, header="SVG DOM"):
+        """
+        Recursively log the entire SVG DOM tree with indentation.
+        Shows:
+        - tag name
+        - id (if present)
+        - attributes
+        - children
+        """
+
+        if header:
+            self.log(logging.DEBUG, f"---------- {header} ---------->")
+
+        if node is None:
+            node = self.svg
+
+        tag = self.tag_name(node)
+        attrs = " ".join(f"{k}='{v}'" for k, v in node.attrib.items())
+        pad = "  " * indent
+
+        self.log(logging.DEBUG, f"{pad}<{tag} {attrs}>")
+
+        for child in node:
+            self.log_svg(child, indent + 1, "")
+
+        if header:
+            self.log(logging.DEBUG, f"--------------------------->")
+
 
     def generate_id(self, el):
         """
