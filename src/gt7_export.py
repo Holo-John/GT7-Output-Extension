@@ -16,10 +16,13 @@ import tempfile
 import logging
 import io
 from datetime import datetime
-
 from numpy import clip
 
 LOG_LEVEL = logging.DEBUG
+
+def log_args(func):
+    func._log_args = True
+    return func
 
 class NullWriter:
     def write(self, *args, **kwargs):
@@ -83,6 +86,7 @@ class GT7Export(inkex.OutputExtension):
 
     XLINK_NS = "http://www.w3.org/1999/xlink"
 
+    @log_args
     def __init__(self):
         super().__init__()
 
@@ -92,6 +96,9 @@ class GT7Export(inkex.OutputExtension):
             "marker-start", "marker-mid", "marker-end",
             "href", f"{{{self.XLINK_NS}}}href"
         )
+
+        if getattr(self.resolve_clippath, "_log_args", False):
+            self.log_all_args("resolve_clippath", (), {})
         
         self.id_counters = {}
 
@@ -131,7 +138,10 @@ class GT7Export(inkex.OutputExtension):
 
         self.log(logging.INFO, f"Writing GT7 log to {self.log_path}")
 
-    def log(self, level, msg):
+    def log_all_args(self, func_name, args, kwargs):
+        self.log(logging.DEBUG, f"args={args} kwargs={kwargs}", stacklevel=3)
+
+    def log(self, level, msg, stacklevel=2):
         """
         Unified logging wrapper:
         - Python logging (with real caller info)
@@ -139,20 +149,20 @@ class GT7Export(inkex.OutputExtension):
         """
 
         if level == logging.ERROR:
-            self.logger.error(msg, stacklevel=2)
+            self.logger.error(msg, stacklevel=stacklevel)
             self.msg(f"[ERROR] {msg}")
             
         elif level == logging.WARNING:
-            self.logger.error(msg, stacklevel=2)
+            self.logger.error(msg, stacklevel=stacklevel)
             self.msg(f"[WARNING] {msg}")
 
         elif level == logging.INFO:
             if self.logger.isEnabledFor(logging.INFO):
-                self.logger.info(msg, stacklevel=2)
+                self.logger.info(msg, stacklevel=stacklevel)
 
         elif level == logging.DEBUG:
             if self.logger.isEnabledFor(logging.DEBUG):
-                self.logger.debug(msg, stacklevel=2)
+                self.logger.debug(msg, stacklevel=stacklevel)
 
 
     def add_arguments(self, pars):
@@ -229,7 +239,7 @@ class GT7Export(inkex.OutputExtension):
         """
 
         if header:
-            self.log(logging.DEBUG, f"---------- {header} ---------->")
+            self.log(logging.DEBUG, f"-------------------- {header} --------------------")
 
         if node is None:
             node = self.svg
@@ -238,13 +248,13 @@ class GT7Export(inkex.OutputExtension):
         attrs = " ".join(f"{k}='{v}'" for k, v in node.attrib.items())
         pad = "  " * indent
 
-        self.log(logging.DEBUG, f"{pad}<{tag} {attrs}>")
+        self.log(logging.DEBUG, f"{pad}<{tag} {attrs}>", stacklevel=3)
 
         for child in node:
             self.log_svg(child, indent + 1, "")
 
         if header:
-            self.log(logging.DEBUG, f"--------------------------->")
+            self.log(logging.DEBUG, f"-----------------------------------------------")
 
 
     def generate_id(self, el):
@@ -2331,6 +2341,7 @@ class GT7Export(inkex.OutputExtension):
         SVG_G  = inkex.addNS('g', 'svg')
         SVG_CP = inkex.addNS('clipPath', 'svg')
 
+        # Compute transform at this node
         t = node.get("transform")
         M_here = parent_transform @ Transform(t) if t else parent_transform
 
@@ -2340,27 +2351,48 @@ class GT7Export(inkex.OutputExtension):
             f"tag={self.tag_name(node)} t={t} M_here={M_here}"
         )
 
+        # --- group-level clip-path inheritance ---
+        group_cp = node.get("clip-path")
+
         for child in node:
             tag = child.tag
+            child_id = child.get("id")
+            child_t = child.get("transform")
+            child_cp = child.get("clip-path")
+
             self.log(
                 logging.DEBUG,
-                f"[CP]   child id={child.get('id')} tag={self.tag_name(child)} "
-                f"transform={child.get('transform')} clip-path={child.get('clip-path')}"
+                f"[CP]   child id={child_id} tag={self.tag_name(child)} "
+                f"transform={child_t} clip-path={child_cp}"
             )
 
+            # --- NEW: inherit clip-path from parent group ---
+            if group_cp and not child_cp:
+                self.log(
+                    logging.DEBUG,
+                    f"[CP]   inheriting group clip-path={group_cp} → child id={child_id}"
+                )
+                child.set("clip-path", group_cp)
+                child_cp = group_cp
+
+            # Allowed: groups → recurse
             if tag == SVG_G:
                 self.collect_clippath_geometry(child, M_here, out)
                 continue
 
+            # Allowed: geometry → collect
             if self.is_geometry(child, gt7_supported=False):
-                t_child = child.get("transform")
-                M_child = M_here @ Transform(t_child) if t_child else M_here
+                M_child = M_here @ Transform(child_t) if child_t else M_here
                 out.append((child, M_child))
                 self.log(
                     logging.DEBUG,
-                    f"[CP]   -> geom collected id={child.get('id')} M_child={M_child}"
+                    f"[CP]   -> geom collected id={child_id} M_child={M_child}"
                 )
                 continue
+
+            # Ignore everything else
+            continue
+
 
 
 
@@ -2523,6 +2555,8 @@ class GT7Export(inkex.OutputExtension):
             f"local_t={t} M_here={M_here}"
         )
 
+        self.log_svg(cp)
+
         # 2. Merge local geometry (with correct transform)
         merged = self.extract_clippath_geometry(cp, M_here)
         if merged is None:
@@ -2607,80 +2641,62 @@ class GT7Export(inkex.OutputExtension):
 
 
     def boolean_intersection(self, pathA, pathB):
-        """
-        Compute the boolean intersection of two <path> elements using
-        Inkscape's Actions API. Returns a new <path> element.
-        """
-
-        self.log(
-           logging.DEBUG,
-            f"[CP] boolean_intersection A_len={len(pathA.get('d')) if pathA.get('d') else 0} "
-            f"B_len={len(pathB.get('d')) if pathB.get('d') else 0}"
-        )
-
-        # 1. Create a temporary document containing only the two paths
-        tmp = inkex.Document() # type: ignore
-        root = tmp.getroot()
-
-        # Assign unique IDs so we can select them via --actions
-        pathA_id = "boolA"
-        pathB_id = "boolB"
+        # Build minimal SVG
+        root = inkex.SvgDocumentElement()
+        root.set('xmlns', 'http://www.w3.org/2000/svg')
 
         a = inkex.PathElement()
-        a.set("id", pathA_id)
+        a.set("id", "boolA")
         a.set("d", pathA.get("d"))
         root.append(a)
 
         b = inkex.PathElement()
-        b.set("id", pathB_id)
+        b.set("id", "boolB")
         b.set("d", pathB.get("d"))
         root.append(b)
 
-        # 2. Serialize temporary document
-        svg_data = inkex.etree.tostring(tmp, encoding="utf-8")
+        # Serialize SVG to string
+        svg_text = inkex.etree.tostring(root, encoding="unicode")
 
-        # 3. Run Inkscape in headless mode to compute intersection
-        #    - convert both to paths
-        #    - select both
-        #    - perform boolean intersection
+        self.log(logging.DEBUG, f"Passing SVG to Inkscape:\n{svg_text}")
+
+        # Actions
         actions = (
-            f"select-by-id:{pathA_id};"
-            f"select-by-id:{pathB_id};"
+            "select-by-id:boolA;"
+            "select-by-id:boolB;"
             "object-to-path;"
             "path-intersection;"
-            "export-id:intersection;"
-            "export-filename:-"
+            "file-save;"
         )
 
-        result = inkex.command( # type: ignore
-            "inkscape",
-            "--pipe",
-            f"--actions={actions}",
-            input=svg_data
+        # Call Inkscape using the correct Inkex API and read back the modified SVG file
+        result_bytes = inkex.command.inkscape_command( # type: ignore
+            root,
+            actions=actions
         )
 
-        # 4. Parse result SVG from stdout
-        try:
-            out_doc = inkex.load_svg(result)
-        except Exception as e:
-            self.log(logging.ERROR, f"[CP] boolean_intersection load_svg failed: {str(e)}")
-            self.log(logging.ERROR, traceback.format_exc())
-            return None
+        self.log(logging.DEBUG, f"Inkscape output size={len(result_bytes)} bytes")
 
-        # 5. Extract the resulting path
-        intersection = out_doc.getroot().find(".//{http://www.w3.org/2000/svg}path")
-        self.log(
-            logging.DEBUG,
-            f"[CP] boolean_intersection intersection_found={intersection is not None}"
-        )
+        result_doc = inkex.etree.fromstring(result_bytes)
+
+        # Extract result - prefer any path that is not one of the operands
+        paths = result_doc.findall(".//{http://www.w3.org/2000/svg}path")
+        candidates = [p for p in paths if p.get("id") not in ("boolA", "boolB")]
+
+        if candidates:
+            intersection = candidates[-1]  # last created path is usually the result
+        else:
+            # Fallback: if Inkscape ever replaces instead of appending
+            intersection = paths[-1] if paths else None
 
         if intersection is None:
             return None
 
-        # 6. Return the resulting <path> element
         new_path = inkex.PathElement()
         new_path.set("d", intersection.get("d"))
         return new_path
+
+
 
 
 

@@ -1,6 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" width="400" height="400" version="1.1" id="svg3" sodipodi:docname="input.svg" inkscape:version="1.4.2 (f4327f4, 2025-05-13)">
-  <sodipodi:namedview id="namedview3" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#d1d1d1" inkscape:zoom="11.75" inkscape:cx="191.53192" inkscape:cy="231.02128" inkscape:window-width="2560" inkscape:window-height="1377" inkscape:window-x="-8" inkscape:window-y="-8" inkscape:window-maximized="1" inkscape:current-layer="svg3"/>
-  <defs id="defs3">
-    <clipPath clipPathUnits="userSpaceOnUse" id="C1"><path d="M 198.264 209.848 L 201.741 224.677 L 215.529 227.108 L 203.133 234.061 L 204.641 248.543 L 193.401 237.423 L 179.036 244.029 L 185.406 230.936 L 176.136 220.162 L 189.924 222.594 Z" id="P1"/></clipPath></defs>
-  <path d="M 118.884 84.154 L 315.846 118.884 L 281.116 315.846 L 84.154 281.116 Z" fill="blue" clip-path="url(#C1)" id="P2"/></svg>
