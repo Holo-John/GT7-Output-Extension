@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from ast import Not
+from platform import node
 import traceback
 import re
 import copy
@@ -401,10 +402,30 @@ class GT7Export(inkex.OutputExtension):
         return re.sub(float_re, repl, s, flags=re.VERBOSE)
 
             
-    def is_geometry(self, el):
-        return self.tag_name(el) in (
-            "path", "rect", "circle", "ellipse"
+    def is_geometry(self, el, gt7_supported=True):
+        """
+        Identify geometry nodes.
+        full=False → GT7-safe geometry only
+        full=True  → all SVG geometry types that can be converted to paths
+        """
+
+        tag = el.tag_name
+
+        if gt7_supported:
+            # GT7-safe geometry
+            return tag in ("path", "rect", "circle", "ellipse")
+
+        # Full SVG geometry (convertible to <path>)
+        return tag in (
+            "path",
+            "rect",
+            "circle",
+            "ellipse",
+            "line",
+            "polyline",
+            "polygon"
         )
+
         
     #--- Transformation Helpers ---    
         
@@ -480,7 +501,7 @@ class GT7Export(inkex.OutputExtension):
             return node
 
         # Anything else → circle becomes ellipse → convert to path
-        return self.circle_to_path(node, cx, cy, r, transform)
+        return self.circle_to_path(node, transform=transform)
     
     def transform_rect(self, node, transform):
         x = float(node.get("x", "0"))
@@ -505,7 +526,7 @@ class GT7Export(inkex.OutputExtension):
             return node
 
         # Anything else → becomes a path
-        return self.rect_to_path(node, x, y, w, h, transform)
+        return self.rect_to_path(node, transform=transform)
 
     def transform_ellipse(self, node, transform):
         cx = float(node.get("cx", "0"))
@@ -530,7 +551,7 @@ class GT7Export(inkex.OutputExtension):
             return node
 
         # Anything else → becomes a path
-        return self.ellipse_to_path(node, cx, cy, rx, ry, transform)
+        return self.ellipse_to_path(node, transform=transform)
 
 
     
@@ -770,7 +791,12 @@ class GT7Export(inkex.OutputExtension):
 
 #--- Simplify Geometry ---
 
-    def circle_to_path(self, node, cx, cy, r, transform):
+    def circle_to_path(self, node, transform=None, replace_node=True):
+        # Extract geometry
+        cx = float(node.get("cx", "0"))
+        cy = float(node.get("cy", "0"))
+        r  = float(node.get("r",  "0"))
+
         # Build path data for a circle using two arcs
         d = (
             f"M {cx - r},{cy} "
@@ -778,28 +804,41 @@ class GT7Export(inkex.OutputExtension):
             f"a {r},{r} 0 1,0 {-2*r},0"
         )
 
-        # Create path and apply transform
-        p = inkex.Path(d).to_absolute().transform(transform) # type: ignore
+        # Convert to path and apply transform
+        # Convert to path and apply transform
+        p = inkex.Path(d).to_absolute()  # type: ignore
+
+        if transform is not None:
+            p = p.transform(transform)
+
 
         # Create new <path> element
-        new_node = inkex.etree.Element(inkex.addNS("path", "svg"))
+        new_node = inkex.PathElement()
         new_node.set("d", str(p))
 
-        # Copy presentation attributes (fill, stroke, etc.)
+        # Copy presentation attributes
         self.copy_presentation_attributes(node, new_node)
 
-        # Replace the circle in the DOM
-        parent, idx = self.parent_of(node)
-        self.remove_node(node)
-        self.add_node(new_node, parent, idx)
+        # Replace <circle> with <path>
+        if replace_node:
+            parent, idx = self.parent_of(node)
+            self.remove_node(node)
+            self.add_node(new_node, parent, idx)
 
         return new_node
 
-    def rect_to_path(self, node, x, y, w, h, transform=None):
+
+    def rect_to_path(self, node, transform=None, replace_node=True):
+        # Extract geometry
+        x = float(node.get("x", "0"))
+        y = float(node.get("y", "0"))
+        w = float(node.get("width",  "0"))
+        h = float(node.get("height", "0"))
+
         rx = float(node.get("rx", "0") or "0")
         ry = float(node.get("ry", "0") or "0")
 
-        # Clamp radii to valid range
+        # Clamp radii
         rx = max(0.0, min(rx, w / 2.0))
         ry = max(0.0, min(ry, h / 2.0))
 
@@ -820,8 +859,9 @@ class GT7Export(inkex.OutputExtension):
                 f"Z"
             )
 
-        # Convert to inkex.Path and apply transform
-        p = inkex.Path(d).to_absolute() # type: ignore
+        # Convert to path and apply transform
+        p = inkex.Path(d).to_absolute()  # type: ignore
+
         if transform is not None:
             p = p.transform(transform)
 
@@ -829,17 +869,25 @@ class GT7Export(inkex.OutputExtension):
         new_node = inkex.PathElement()
         new_node.set("d", str(p))
 
-        # Copy presentation attributes (fill, stroke, etc.)
+        # Copy presentation attributes
         self.copy_presentation_attributes(node, new_node)
 
-        # Replace <rect> with <path> in DOM
-        parent, idx = self.parent_of(node)
-        self.remove_node(node)
-        self.add_node(new_node, parent, idx)
+        # Replace <rect> with <path>
+        if replace_node:
+            parent, idx = self.parent_of(node)
+            self.remove_node(node)
+            self.add_node(new_node, parent, idx)
 
         return new_node
+
         
-    def ellipse_to_path(self, node, cx, cy, rx, ry, transform):
+    def ellipse_to_path(self, node, transform=None, replace_node=True):
+        # Extract geometry
+        cx = float(node.get("cx", "0"))
+        cy = float(node.get("cy", "0"))
+        rx = float(node.get("rx", "0"))
+        ry = float(node.get("ry", "0"))
+
         # Build ellipse path using two arcs
         d = (
             f"M {cx - rx},{cy} "
@@ -847,24 +895,28 @@ class GT7Export(inkex.OutputExtension):
             f"a {rx},{ry} 0 1,0 {-2*rx},0"
         )
 
-        # Convert to inkex.Path and apply transform
-        p = inkex.Path(d).to_absolute().transform(transform) # type: ignore
+        # Convert to path and apply transform
+        p = inkex.Path(d).to_absolute()  # type: ignore
+
+        if transform is not None:
+            p = p.transform(transform)
 
         # Create new <path> element
         new_node = inkex.PathElement()
         new_node.set("d", str(p))
 
-        # Copy presentation attributes (fill, stroke, etc.)
+        # Copy presentation attributes
         self.copy_presentation_attributes(node, new_node)
 
-        # Replace <ellipse> with <path> in DOM
-        parent, idx = self.parent_of(node)
-        self.remove_node(node)
-        self.add_node(new_node, parent, idx)
+        # Replace <ellipse> with <path>
+        if replace_node:
+            parent, idx = self.parent_of(node)
+            self.remove_node(node)
+            self.add_node(new_node, parent, idx)
 
         return new_node
 
-    def poly_to_path(self, node, close=False):
+    def poly_to_path(self, node, transform=None, close=False, replace_node=True):
         points = node.get("points")
         if not points:
             return
@@ -885,21 +937,28 @@ class GT7Export(inkex.OutputExtension):
         if close:
             d.append("Z")
 
+        # Apply transform
+        p = inkex.Path(" ".join(d)).to_absolute() # type: ignore
+
+        if transform is not None:
+            p = p.transform(transform)
+
         # Create new <path> element
         new_node = inkex.PathElement()
-        new_node.set("d", " ".join(d))
+        new_node.set("d", str(p))
 
         # Copy presentation attributes
         self.copy_presentation_attributes(node, new_node)
 
         # Replace original node
-        parent, idx = self.parent_of(node)
-        self.remove_node(node)
-        self.add_node(new_node, parent, idx)
+        if replace_node:
+            parent, idx = self.parent_of(node)
+            self.remove_node(node)
+            self.add_node(new_node, parent, idx)
 
         return new_node
 
-    def line_to_path(self, node):
+    def line_to_path(self, node, transform=None, replace_node=True):
         x1 = float(node.get("x1", "0"))
         y1 = float(node.get("y1", "0"))
         x2 = float(node.get("x2", "0"))
@@ -907,17 +966,24 @@ class GT7Export(inkex.OutputExtension):
 
         d = f"M {x1},{y1} L {x2},{y2}"
 
+        # Apply transform
+        p = inkex.Path(d).to_absolute()  # type: ignore
+
+        if transform is not None:
+            p = p.transform(transform)
+
         # Create new <path> element
         new_node = inkex.PathElement()
-        new_node.set("d", d)
+        new_node.set("d", str(p))
 
         # Copy presentation attributes
         self.copy_presentation_attributes(node, new_node)
 
         # Replace original node
-        parent, idx = self.parent_of(node)
-        self.remove_node(node)
-        self.add_node(new_node, parent, idx)
+        if replace_node:
+            parent, idx = self.parent_of(node)
+            self.remove_node(node)
+            self.add_node(new_node, parent, idx)
 
         return new_node
         
@@ -942,11 +1008,7 @@ class GT7Export(inkex.OutputExtension):
                     rx = float(el.get("rx", "0") or "0")
                     ry = float(el.get("ry", "0") or "0")
                     if rx != 0 or ry != 0:
-                        x = float(el.get("x", "0"))
-                        y = float(el.get("y", "0"))
-                        w = float(el.get("width", "0"))
-                        h = float(el.get("height", "0"))
-                        self.rect_to_path(el, x, y, w, h, transform=None)
+                        self.rect_to_path(el)
                         count += 1
                     continue
 
@@ -1060,37 +1122,23 @@ class GT7Export(inkex.OutputExtension):
     
     def apply_transform_to_clippath(self, cp, M_cp):
         """
-        Flatten transforms inside a clipPath using the shape's transform chain.
-        This is the correct SVG rule:
-            M_final_clip = M_shape * M_clipPath * M_geometry
+        Apply the shape's transform chain to a resolved clipPath.
+        After resolve_clippath(), cp contains exactly one <path> child
+        with all geometry already flattened.
         """
 
-        # Flatten the clipPath's own transform
-        local = Transform(cp.get("transform"))
-        M_final = M_cp @ local
+        # 1. Compute final transform for this clipPath
+        t = cp.get("transform")
+        M_final = M_cp @ Transform(t) if t else M_cp
 
-        self.log(logging.DEBUG,
-            f"id={('id')} tag={self.tag_name(cp)} parent={M_cp} local={local} final={M_final}"
-        )
-
+        # 2. Apply transform to the single geometry node
         for child in cp:
-            tag = self.tag_name(child)
+            if self.is_geometry(child, gt7_supported=False):
+                self.apply_transform_to_node(child, M_final)
+                child.attrib.pop("transform", None)
 
-            if tag == "clippath":
-                # Flatten nested clipPath using SAME M_final
-                self.apply_transform_to_clippath(child, M_final)
-                continue
-
-            # Flatten geometry inside the clipPath
-            self.apply_transform_to_node(child, M_final)
-
-            # Flatten nested groups inside clipPath
-            if tag == "g":
-                self.apply_all_transforms(child, M_final)
-
-            # Remove transform attributes
-            child.attrib.pop("transform", None)
-
+        # 3. Remove transform from the clipPath itself
+        cp.attrib.pop("transform", None)
 
         return 1
 
@@ -2279,59 +2327,169 @@ class GT7Export(inkex.OutputExtension):
 
 #--- clipping ---
 
-    def shallow_clone_node(self, node):
-        """Clone a single node without children, preserving geometry but not IDs."""
-        new = inkex.etree.Element(node.tag, nsmap=node.nsmap)
-
-        for key, value in node.attrib.items():
-            if key != "id":
-                new.set(key, value)
-
-        # strip href/xlink:href on cloned clipPaths if desired
-        if new.tag == inkex.addNS('clipPath', 'svg'):
-            new.attrib.pop("href", None)
-            new.attrib.pop(f"{{{self.XLINK_NS}}}href", None)
-
-        return new
-
-    def deep_clone_clipPath(self, cp):
+    def collect_clippath_geometry(self, node, parent_transform, out):
         """
-        Clone a clipPath subtree, resolving href on any nested clipPaths.
-        - No IDs are preserved
-        - href/xlink:href are removed on clones
+        Recursively collect geometry inside a clipPath.
+        Groups are allowed.
+        Nested clipPaths are ignored.
+        """
+        SVG_G  = inkex.addNS('g', 'svg')
+        SVG_CP = inkex.addNS('clipPath', 'svg')
+
+        # Compute transform at this node
+        t = node.get("transform")
+        if t:
+            M_here = parent_transform @ Transform(t)
+        else:
+            M_here = parent_transform
+
+        for child in node:
+            tag = child.tag
+
+            # Allowed: groups
+            if tag == SVG_G:
+                self.collect_clippath_geometry(child, M_here, out)
+                continue
+
+            # Allowed: geometry
+            if self.is_geometry(child, gt7_supported=False):
+                t_child = child.get("transform")
+                M_child = M_here @ Transform(t_child) if t_child else M_here
+                out.append((child, M_child))
+                continue
+            
+            # Ignore everything else
+            continue
+
+
+    def extract_clippath_geometry(self, cp, parent_transform):
+        """
+        Extract geometry inside cp, flatten groups, accumulate transforms,
+        convert to paths, and merge into a single path.
+        """
+        geom = []
+        self.collect_clippath_geometry(cp, parent_transform, geom)
+
+        local_paths = []
+        
+        for node, M in geom:
+            p = self.convert_to_path(node, transform=M, replace_node=False)
+            if p is not None:
+                local_paths.append(p)
+
+        if not local_paths:
+            return None
+
+        return self.merge_paths(local_paths)
+
+
+
+    def convert_to_path(self, node, transform, replace_node=True):
+        """Convert any geometry node to a path element."""
+        tag = node.tag
+
+        if tag == inkex.addNS('path', 'svg'):
+            p = inkex.Path(node.get("d")).to_absolute() # type: ignore
+
+            if transform is not None:
+                p = p.transform(transform)
+
+            new_node = inkex.PathElement()
+            new_node.set("d", str(p))
+
+            self.copy_presentation_attributes(node, new_node)
+            return new_node
+
+
+        if tag == inkex.addNS('rect', 'svg'):
+            return self.rect_to_path(node, transform=transform, replace_node=replace_node)
+
+        if tag == inkex.addNS('circle', 'svg'):
+            return self.circle_to_path(node, transform=transform, replace_node=replace_node)
+
+        if tag == inkex.addNS('ellipse', 'svg'):
+            return self.ellipse_to_path(node, transform=transform, replace_node=replace_node)
+
+        if tag in (inkex.addNS('polygon', 'svg'), inkex.addNS('polyline', 'svg')):
+            return self.poly_to_path(node, transform=transform, replace_node=replace_node)
+
+        if tag == inkex.addNS('line', 'svg'):
+            return self.line_to_path(node, transform=transform, replace_node=replace_node)
+
+        # Unsupported geometry → ignore
+        return None
+
+    def merge_paths(self, paths):
+        if not paths:
+            return None
+
+        # Concatenate path data
+        d = " ".join(p.get("d") for p in paths if p is not None)
+
+        merged = inkex.PathElement()
+        merged.set("d", d)
+
+        # Determine fill-rule
+        fill_rules = {p.get("fill-rule") for p in paths if p.get("fill-rule")}
+        clip_rules = {p.get("clip-rule") for p in paths if p.get("clip-rule")}
+
+        # Apply correct fill-rule
+        if "evenodd" in fill_rules:
+            merged.set("fill-rule", "evenodd")
+        elif "nonzero" in fill_rules:
+            merged.set("fill-rule", "nonzero")
+
+        # Apply correct clip-rule
+        if "evenodd" in clip_rules:
+            merged.set("clip-rule", "evenodd")
+        elif "nonzero" in clip_rules:
+            merged.set("clip-rule", "nonzero")
+
+        return merged
+
+
+    def resolve_clippath(self, cp, parent_transform=Transform()):
+        """
+        Resolve cp into a single flattened path.
+        Post-order recursion:
+        1. accumulate transforms on this clipPath
+        2. resolve referenced clipPaths first
+        3. merge local geometry
+        4. boolean-intersect local geometry with referenced geometry
         """
 
-        new_cp = self.shallow_clone_node(cp)
+        # 1. Compute transform at this clipPath node
+        t = cp.get("transform")
+        M_here = parent_transform @ Transform(t) if t else parent_transform
 
-        for child in cp:
-            # If child is a clipPath with href, resolve its chain recursively
-            if child.tag == inkex.addNS('clipPath', 'svg'):
-                href = child.get("href") or child.get(f"{{{self.XLINK_NS}}}href")
-                if href and href.startswith("#"):
-                    ref_id = href[1:]
-                    ref = self.find_node(ref_id)
-                    if ref is not None:
-                        nested = self.deep_clone_clipPath(ref)
-                        new_cp.append(nested)
-                        continue
+        # 2. Merge local geometry (with correct transform)
+        merged = self.extract_clippath_geometry(cp, M_here)
+        if merged is None:
+            # No local geometry → nothing to clip
+            return None
 
-            # Otherwise, shallow‑clone node and recurse its children
-            new_child = self.shallow_clone_node(child)
-            for grand in child:
-                new_child.append(self.deep_clone_clipPath(grand) if grand.tag == inkex.addNS('clipPath', 'svg')
-                                else self.shallow_clone_node(grand))
-            new_cp.append(new_child)
+        # 3. Resolve referenced clipPath (post-order)
+        href = cp.get("href") or cp.get(f"{{{self.XLINK_NS}}}href")
+        if href and href.startswith("#"):
+            ref = self.find_node(href[1:])
+            if ref is not None:
+                # referenced clipPath inherits the same transform chain
+                child_path = self.resolve_clippath(ref, M_here)
+                if child_path is not None:
+                    merged = self.boolean_intersection(merged, child_path)
 
-        # strip IDs in subtree
-        new_cp.attrib.pop("id", None)
-        for el in new_cp.iter():
-            el.attrib.pop("id", None)
-
-        return new_cp
-
+        # 4. Return fully resolved clipPath geometry
+        return merged
 
 
     def resolve_clippath_for_shape(self, shape):
+        """
+        Resolve the clipPath referenced by 'shape' into a flattened path,
+        clone the clipPath element, insert the flattened geometry, and
+        rewire the shape to use the new clipPath.
+        """
+
+        # 1. Check if shape has a clip-path reference
         val = shape.get("clip-path")
         if not val or not val.startswith("url(#"):
             return 0
@@ -2341,14 +2499,96 @@ class GT7Export(inkex.OutputExtension):
         if cp is None:
             return 0
 
-        # Clone clipPath, resolving href chains inside it
-        new_cp = self.deep_clone_clipPath(cp)
+        # 2. Resolve clipPath geometry (with full transform chain)
+        flattened = self.resolve_clippath(cp, Transform())
+        if flattened is None:
+            # No geometry → nothing to clip
+            shape.attrib.pop("clip-path", None)
+            return 0
 
+        # 3. Clone clipPath element (without ID)
+        clone = inkex.etree.Element(cp.tag, nsmap=cp.nsmap)
+        for k, v in cp.attrib.items():
+            if k != "id":
+                clone.set(k, v)
+
+        # 4. Insert flattened geometry into clone
+        clone.append(flattened)
+
+        # 5. Insert clone into <defs> and assign a new ID
         defs = self.ensure_defs()
-        self.add_node(new_cp, defs)
+        self.add_node(clone, defs)   # assigns new ID automatically
 
-        shape.set("clip-path", f"url(#{new_cp.get('id')})")
+        # 6. Rewire shape to use the new clipPath
+        new_id = clone.get("id")
+        shape.set("clip-path", f"url(#{new_id})")
+
         return 1
+
+
+
+    def boolean_intersection(self, pathA, pathB):
+        """
+        Compute the boolean intersection of two <path> elements using
+        Inkscape's Actions API. Returns a new <path> element.
+        """
+
+        # 1. Create a temporary document containing only the two paths
+        tmp = inkex.Document() # type: ignore
+        root = tmp.getroot()
+
+        # Assign unique IDs so we can select them via --actions
+        pathA_id = "boolA"
+        pathB_id = "boolB"
+
+        a = inkex.PathElement()
+        a.set("id", pathA_id)
+        a.set("d", pathA.get("d"))
+        root.append(a)
+
+        b = inkex.PathElement()
+        b.set("id", pathB_id)
+        b.set("d", pathB.get("d"))
+        root.append(b)
+
+        # 2. Serialize temporary document
+        svg_data = inkex.etree.tostring(tmp, encoding="utf-8")
+
+        # 3. Run Inkscape in headless mode to compute intersection
+        #    - convert both to paths
+        #    - select both
+        #    - perform boolean intersection
+        actions = (
+            f"select-by-id:{pathA_id};"
+            f"select-by-id:{pathB_id};"
+            "object-to-path;"
+            "path-intersection;"
+            "export-id:intersection;"
+            "export-filename:-"
+        )
+
+        result = inkex.command( # type: ignore
+            "inkscape",
+            "--pipe",
+            f"--actions={actions}",
+            input=svg_data
+        )
+
+        # 4. Parse result SVG from stdout
+        try:
+            out_doc = inkex.load_svg(result)
+        except Exception:
+            return None
+
+        # 5. Extract the resulting path
+        intersection = out_doc.getroot().find(".//{http://www.w3.org/2000/svg}path")
+        if intersection is None:
+            return None
+
+        # 6. Return the resulting <path> element
+        new_path = inkex.PathElement()
+        new_path.set("d", intersection.get("d"))
+        return new_path
 
 
 

@@ -1,0 +1,31 @@
+<svg width="400" height="400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Base star geometry -->
+    <g id="star">
+      <path d="M0,-20 L6,-6 L20,-6 L9,3 L13,17 L0,8 L-13,17 L-9,3 L-20,-6 L-6,-6 Z" fill="gold"/>
+    </g>
+
+    <!-- ClipPath A: scaled star -->
+    <clipPath id="clipA" clipPathUnits="userSpaceOnUse" transform="rotate(30)">
+      <use href="#star" transform="scale(1.5)" />
+    </clipPath>
+
+    <!-- ClipPath B: star clipped by clipA -->
+    <clipPath id="clipB" clipPathUnits="userSpaceOnUse">
+      <use href="#star" clip-path="url(#clipA)" transform="rotate(45)" />
+    </clipPath>
+
+    <!-- ClipPath C: star clipped by clipB -->
+    <clipPath id="clipC" clipPathUnits="userSpaceOnUse">
+      <use href="#star" clip-path="url(#clipB)" transform="translate(0,30)" />
+    </clipPath>
+  </defs>
+
+  <!-- Test geometry using the star-only clipPath -->
+  <g transform="translate(200,200)">
+    <rect x="-100" y="-100" width="200" height="200"
+          fill="blue"
+          clip-path="url(#clipC)"
+          transform="rotate(10)" />
+  </g>
+</svg>
