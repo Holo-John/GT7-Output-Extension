@@ -7,6 +7,7 @@ import copy
 from turtle import shape
 from unittest import result
 import inkex
+import inkex.command
 from inkex.styles import Style
 from inkex.transforms import Transform
 import sys
@@ -2658,26 +2659,23 @@ class GT7Export(inkex.OutputExtension):
         # Serialize SVG to string
         svg_text = inkex.etree.tostring(root, encoding="unicode")
 
-        self.log(logging.DEBUG, f"Passing SVG to Inkscape:\n{svg_text}")
+        self.log_svg(root, header="Inkscape Input for Boolean Intersection")
 
-        # Actions
-        actions = (
-            "select-by-id:boolA;"
-            "select-by-id:boolB;"
-            "object-to-path;"
-            "path-intersection;"
-            "file-save;"
-        )
+        # Actions to perform on the selected paths
+        actions = "object-to-path;path-intersection;file-save;"
 
-        # Call Inkscape using the correct Inkex API and read back the modified SVG file
-        result_bytes = inkex.command.inkscape_command( # type: ignore
+        # Select both boolA and boolB, then run the boolean intersection and save the result
+        result_bytes = inkex.command.inkscape_command(
             root,
-            actions=actions
+            select=("boolA", "boolB"),
+            actions=actions,
         )
 
         self.log(logging.DEBUG, f"Inkscape output size={len(result_bytes)} bytes")
 
         result_doc = inkex.etree.fromstring(result_bytes)
+
+        self.log_svg(result_doc, header="Inkscape Output from Boolean Intersection")
 
         # Extract result - prefer any path that is not one of the operands
         paths = result_doc.findall(".//{http://www.w3.org/2000/svg}path")

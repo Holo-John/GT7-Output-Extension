@@ -3,4 +3,4 @@
   <sodipodi:namedview id="namedview3" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" inkscape:showpageshadow="2" inkscape:pageopacity="0.0" inkscape:pagecheckerboard="0" inkscape:deskcolor="#d1d1d1" inkscape:zoom="11.75" inkscape:cx="191.53192" inkscape:cy="231.02128" inkscape:window-width="933" inkscape:window-height="1211" inkscape:window-x="123" inkscape:window-y="136" inkscape:window-maximized="0" inkscape:current-layer="svg3"/>
   <defs id="defs3">
     <clipPath clipPathUnits="userSpaceOnUse" id="C1"><path d="M 228.191 189.739 L 211.535 205.379 L 218.718 225.113 L 200.389 214.225 L 182.707 227.046 L 188.724 204.104 L 169.368 190.398 L 191.154 188.853 L 198.197 168.731 L 205.379 188.465 Z" id="P1"/></clipPath></defs>
-  <path d="M 118.884 84.154 L 315.846 118.884 L 281.116 315.846 L 84.154 281.116 Z" fill="blue" clip-path="url(#C1)" id="P2"/></svg>
+  <path d="M 118.884 84.154 L 315.846 118.884 L 281.116 315.846 L 84.154 281.116 Z" clip-path="url(#C1)" fill="blue" id="P2"/></svg>
