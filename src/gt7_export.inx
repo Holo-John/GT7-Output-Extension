@@ -5,8 +5,8 @@
   <output class="GT7Export" saveas="True">
     <extension>.gt7</extension>
     <mimetype>image/svg+xml</mimetype>
-    <filetypename>GT7 Optimized SVG (*.gt7)</filetypename>
-    <filetypetooltip>GT7 Optimized SVG</filetypetooltip>
+    <filetypename>Gran Turismo 7 (*.gt7)</filetypename>
+    <filetypetooltip>Optimized SVG for Gran Turismo 7 Livery Editor</filetypetooltip>
   </output>
 
   <script>
