@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from ast import Not
 from platform import node
+from pydoc import doc
 import traceback
 import re
 import copy
@@ -2643,7 +2644,9 @@ class GT7Export(inkex.OutputExtension):
 
     def boolean_intersection(self, pathA, pathB):
         # Build minimal SVG
-        root = inkex.SvgDocumentElement()
+        minimal_svg = """<svg xmlns="http://www.w3.org/2000/svg"></svg>"""
+        doc = inkex.load_svg(minimal_svg)
+        root = doc.getroot()
         root.set('xmlns', 'http://www.w3.org/2000/svg')
 
         a = inkex.PathElement()
@@ -2662,23 +2665,24 @@ class GT7Export(inkex.OutputExtension):
         self.log_svg(root, header="Inkscape Input for Boolean Intersection")
 
         # Actions to perform on the selected paths
-        actions = "object-to-path;path-intersection;file-save;"
+        actions = "path-intersection"
 
         # Select both boolA and boolB, then run the boolean intersection and save the result
         result_bytes = inkex.command.inkscape_command(
-            root,
-            select=("boolA", "boolB"),
+            doc,
+            select="boolA,boolB",
             actions=actions,
         )
 
         self.log(logging.DEBUG, f"Inkscape output size={len(result_bytes)} bytes")
 
-        result_doc = inkex.etree.fromstring(result_bytes)
+        result_doc = inkex.load_svg(result_bytes)
+        result_root = result_doc.getroot()
 
-        self.log_svg(result_doc, header="Inkscape Output from Boolean Intersection")
+        self.log_svg(result_root, header="Inkscape Output from Boolean Intersection")
 
         # Extract result - prefer any path that is not one of the operands
-        paths = result_doc.findall(".//{http://www.w3.org/2000/svg}path")
+        paths = result_root.findall(".//{http://www.w3.org/2000/svg}path")
         candidates = [p for p in paths if p.get("id") not in ("boolA", "boolB")]
 
         if candidates:
@@ -2693,11 +2697,6 @@ class GT7Export(inkex.OutputExtension):
         new_path = inkex.PathElement()
         new_path.set("d", intersection.get("d"))
         return new_path
-
-
-
-
-
 
 if __name__ == "__main__":
     GT7Export().run()
