@@ -197,6 +197,9 @@ class GT7Export(inkex.OutputExtension):
             transform_count = self.apply_all_transforms()
             self.log(logging.INFO, f"Resolved {transform_count} transformations into plain geometry")
             self.log_svg(header="AFTER apply_all_transforms()")
+
+            self.remove_all_clippaths()
+            self.log_svg(header="AFTER remove_all_clippaths()")
             
             self.translate_viewbox()
             self.clean_stroke_attributes()
@@ -472,14 +475,33 @@ class GT7Export(inkex.OutputExtension):
         el.set("transform", str(combined))
 
         
+    #def transform_path(self, node, transform):
+    #    d = node.get("d")
+    #    if d:
+    #        p = inkex.Path(d) # type: ignore
+    #        p = p.transform(transform)
+    #        node.set("d", str(p))
+
+    #    return node
+
     def transform_path(self, node, transform):
-        d = node.get("d")
-        if d:
-            p = inkex.Path(d) # type: ignore
-            p = p.transform(transform)
-            node.set("d", str(p))
+        # Parse existing path, preserving all subpaths
+        p = node.path.to_absolute()
+
+        # Apply CTM safely
+        p = p.transform(transform)
+
+        # Write back
+        node.path = p
+
+        # Preserve fill-rule and style
+        if node.get("fill-rule"):
+            node.set("fill-rule", node.get("fill-rule"))
+        if node.get("style"):
+            node.set("style", node.get("style"))
 
         return node
+
             
     def transform_circle(self, node, transform):
         cx = float(node.get("cx", "0"))
@@ -835,22 +857,39 @@ class GT7Export(inkex.OutputExtension):
         return p
 
 
-    def convert_to_path(self, node, transform, replace_node=True):
+    def convert_to_path(self, node, transform=None, replace_node=False):
             """Convert any geometry node to a path element."""
             tag = node.tag
 
             if tag == inkex.addNS('path', 'svg'):
-                p = inkex.Path(node.get("d")).to_absolute() # type: ignore
+                # Parse existing path, preserving all subpaths
+                p = node.path.to_absolute()
 
+                # Apply transform safely
                 if transform is not None:
                     p = p.transform(transform)
 
+                # Create new node (clone) or replacement
                 new_node = inkex.PathElement()
-                new_node.set("d", str(p))
+                new_node.path = p
 
+                # Copy presentation attributes (fill, stroke, opacity, etc.)
                 self.copy_presentation_attributes(node, new_node)
-                return new_node
 
+                # Preserve fill-rule
+                if node.get("fill-rule"):
+                    new_node.set("fill-rule", node.get("fill-rule"))
+
+                if node.get("style"):
+                    new_node.set("style", node.get("style"))
+
+                if replace_node:
+                    new_node.attrs.pop("id", None)  # Remove ID to avoid duplicates
+                    parent, idx = self.parent_of(node)
+                    self.remove_node(node, parent)
+                    self.add_node(new_node, parent, idx)
+
+                return new_node
 
             if tag == inkex.addNS('rect', 'svg'):
                 return self.rect_to_path(node, transform=transform, replace_node=replace_node)
@@ -2534,6 +2573,76 @@ class GT7Export(inkex.OutputExtension):
         shape.set("clip-path", f"url(#{new_id})")
 
         return 1
+    
+    def remove_all_clippaths(self, node=None):
+        """
+        Post-order clipping pass.
+        Mirrors apply_all_transforms() in structure and traversal.
+        For each geometry node with clip-path="url(#id)", resolve the
+        referenced <clipPath>, intersect geometry with the flattened
+        clip geometry, replace the node's path data, and remove the
+        clip-path attribute entirely.
+
+        After traversal, remove all <clipPath> elements from <defs>.
+        """
+
+        count = 0
+
+        # Entry point: start at root
+        if node is None:
+            node = self.svg
+
+        tag = self.tag_name(node)
+
+        # Skip paint servers and clipPath definitions themselves
+        if tag in ("linearGradient", "radialGradient", "pattern",
+                "filter", "marker", "stop"):
+            return 0
+
+        # --- 1. Recurse into children (post-order) ---
+        for child in list(node):
+            count += self.remove_all_clippaths(child)
+
+        # --- 2. Process this node ---
+        cp = self.get_clippath(node)
+        if cp is None:
+            return count
+
+        # Convert shape to path (transform already flattened)
+        geom = self.convert_to_path(node, Transform())
+        if geom is None:
+            # No geometry → remove clip-path and leave empty
+            node.attrib.pop("clip-path", None)
+            node.set("d", "")
+            return count + 1
+
+        # ClipPath must contain exactly one geometry child after flattening
+        clip_geom = None
+        for child in cp:
+            if self.is_geometry(child, gt7_supported=True):
+                clip_geom = child
+                break
+
+        if clip_geom is None:
+            # No geometry → fully clipped
+            node.attrib.pop("clip-path", None)
+            node.set("d", "")
+            return count + 1        
+        
+        # Boolean intersection
+        clipped = self.path_intersection(geom, clip_geom)
+        if clipped is None:
+            node.attrib.pop("clip-path", None)
+            node.set("d", "")
+            return count + 1
+
+        # Replace geometry
+        node.set("d", clipped.get("d"))
+
+        # Remove clip-path attribute
+        node.attrib.pop("clip-path", None)
+
+        return count + 1
 
 
 # ---- Inkscape Actions ----
