@@ -99,9 +99,6 @@ class GT7Export(inkex.OutputExtension):
             "href", f"{{{self.XLINK_NS}}}href"
         )
 
-        if getattr(self.resolve_clippath, "_log_args", False):
-            self.log_all_args("resolve_clippath", (), {})
-        
         self.id_counters = {}
 
         # ---------------------------------------------------------
@@ -802,6 +799,76 @@ class GT7Export(inkex.OutputExtension):
         grad.set("gradientTransform", str(combined))
 
 #--- Simplify Geometry ---
+
+    
+    def combine_paths(self, paths):
+        if not paths:
+            return None
+
+        # Concatenate path data
+        d = " ".join(p.get("d") for p in paths if p is not None)
+
+        merged = inkex.PathElement()
+        merged.set("d", d)
+
+        # Determine fill-rule
+        fill_rules = {p.get("fill-rule") for p in paths if p.get("fill-rule")}
+        clip_rules = {p.get("clip-rule") for p in paths if p.get("clip-rule")}
+
+        # Apply correct fill-rule
+        if "evenodd" in fill_rules:
+            merged.set("fill-rule", "evenodd")
+        elif "nonzero" in fill_rules:
+            merged.set("fill-rule", "nonzero")
+
+        # Apply correct clip-rule
+        if "evenodd" in clip_rules:
+            merged.set("clip-rule", "evenodd")
+        elif "nonzero" in clip_rules:
+            merged.set("clip-rule", "nonzero")
+
+        return merged
+
+    def empty_path(self):
+        p = inkex.PathElement()
+        p.set("d", "")
+        return p
+
+
+    def convert_to_path(self, node, transform, replace_node=True):
+            """Convert any geometry node to a path element."""
+            tag = node.tag
+
+            if tag == inkex.addNS('path', 'svg'):
+                p = inkex.Path(node.get("d")).to_absolute() # type: ignore
+
+                if transform is not None:
+                    p = p.transform(transform)
+
+                new_node = inkex.PathElement()
+                new_node.set("d", str(p))
+
+                self.copy_presentation_attributes(node, new_node)
+                return new_node
+
+
+            if tag == inkex.addNS('rect', 'svg'):
+                return self.rect_to_path(node, transform=transform, replace_node=replace_node)
+
+            if tag == inkex.addNS('circle', 'svg'):
+                return self.circle_to_path(node, transform=transform, replace_node=replace_node)
+
+            if tag == inkex.addNS('ellipse', 'svg'):
+                return self.ellipse_to_path(node, transform=transform, replace_node=replace_node)
+
+            if tag in (inkex.addNS('polygon', 'svg'), inkex.addNS('polyline', 'svg')):
+                return self.poly_to_path(node, transform=transform, replace_node=replace_node)
+
+            if tag == inkex.addNS('line', 'svg'):
+                return self.line_to_path(node, transform=transform, replace_node=replace_node)
+
+            # Unsupported geometry → ignore
+            return None
 
     def circle_to_path(self, node, transform=None, replace_node=True):
         # Extract geometry
@@ -2338,342 +2405,136 @@ class GT7Export(inkex.OutputExtension):
         )
 
 #--- clipping ---
+    
 
-    def collect_clippath_geometry(self, node, parent_transform, out):
-        SVG_G  = inkex.addNS('g', 'svg')
-        SVG_CP = inkex.addNS('clipPath', 'svg')
-
-        # Compute transform at this node
-        t = node.get("transform")
-        M_here = parent_transform @ Transform(t) if t else parent_transform
-
-        self.log(
-            logging.DEBUG,
-            f"[CP] collect_clippath_geometry node_id={node.get('id')} "
-            f"tag={self.tag_name(node)} t={t} M_here={M_here}"
-        )
-
-        # --- group-level clip-path inheritance ---
-        group_cp = node.get("clip-path")
-
-        for child in node:
-            tag = child.tag
-            child_id = child.get("id")
-            child_t = child.get("transform")
-            child_cp = child.get("clip-path")
-
-            self.log(
-                logging.DEBUG,
-                f"[CP]   child id={child_id} tag={self.tag_name(child)} "
-                f"transform={child_t} clip-path={child_cp}"
-            )
-
-            # --- NEW: inherit clip-path from parent group ---
-            if group_cp and not child_cp:
-                self.log(
-                    logging.DEBUG,
-                    f"[CP]   inheriting group clip-path={group_cp} → child id={child_id}"
-                )
-                child.set("clip-path", group_cp)
-                child_cp = group_cp
-
-            # Allowed: groups → recurse
-            if tag == SVG_G:
-                self.collect_clippath_geometry(child, M_here, out)
-                continue
-
-            # Allowed: geometry → collect
-            if self.is_geometry(child, gt7_supported=False):
-                M_child = M_here @ Transform(child_t) if child_t else M_here
-                out.append((child, M_child))
-                self.log(
-                    logging.DEBUG,
-                    f"[CP]   -> geom collected id={child_id} M_child={M_child}"
-                )
-                continue
-
-            # Ignore everything else
-            continue
+    def resolve_clippath(self, cp, transform = Transform()):
+        self.log(logging.DEBUG, f"[CP] resolve_clippath id={cp.get('id')} M={transform}")
+        self.log(logging.DEBUG, f"[CP]   children={[self.tag_name(c) for c in cp]}")
 
 
-
-
-    def extract_clippath_geometry(self, cp, parent_transform):
-        """
-        Extract geometry inside cp, flatten groups, accumulate transforms,
-        convert to paths, resolve nested clip-path attributes, and merge
-        into a single path.
-
-        SVG semantics:
-        - All child shapes of <clipPath> are UNIONed to form the clip region.
-        - If a child has clip-path="url(#...)", that child is first
-        INTERSECTED with the referenced clipPath.
-        - If this <clipPath> has href="#otherClipPath", the final region
-        is INTERSECTED with that referenced clipPath.
-        """
-
-        self.log(
-            logging.DEBUG,
-            f"[CP] extract_clippath_geometry cp_id={cp.get('id')} parent={parent_transform}"
-        )
-
-        # 1. Collect geometry + accumulated transforms
-        geom: list[tuple[inkex.BaseElement, Transform]] = []
-        self.collect_clippath_geometry(cp, parent_transform, geom)
-
-        self.log(
-            logging.DEBUG,
-            f"[CP]   collected {len(geom)} geom nodes: "
-            f"{[n.get('id') for (n, _) in geom]}"
-        )
-
-        local_paths: list[inkex.PathElement] = []
-
-        # 2. Convert each geometry node to a path and resolve nested clip-path
-        for node, M in geom:
-            self.log(
-                logging.DEBUG,
-                f"[CP]   convert_to_path id={node.get('id')} "
-                f"M={M} clip-path={node.get('clip-path')}"
-            )
-
-            p = self.convert_to_path(node, transform=M, replace_node=False)
-            if p is None:
-                self.log(logging.DEBUG, "[CP]   -> convert_to_path returned None")
-                continue
-
-            # Nested clip-path on the geometry itself: intersection
-            cp_val = node.get("clip-path")
-            if cp_val and cp_val.startswith("url(#"):
-                ref_id = cp_val[5:-1]
-                self.log(
-                    logging.DEBUG,
-                    f"[CP]   nested clip-path on {node.get('id')} → {ref_id}"
-                )
-
-                ref = self.find_node(ref_id)
-                if ref is None:
-                    self.log(
-                        logging.DEBUG,
-                        f"[CP]   nested cp_id={ref_id} NOT FOUND"
-                    )
-                else:
-                    self.log(
-                        logging.DEBUG,
-                        f"[CP]   resolving nested cp_id={ref_id}"
-                    )
-                    ref_path = self.resolve_clippath(ref, Transform())
-                    if ref_path is None:
-                        self.log(
-                            logging.DEBUG,
-                            f"[CP]   nested cp_id={ref_id} resolved to None"
-                        )
-                    else:
-                        self.log(
-                            logging.DEBUG,
-                            f"[CP]   boolean_intersection {node.get('id')} ∩ {ref_id}"
-                        )
-                        p = self.path_intersection(p, ref_path)
-
-            # Safe d_len logging
-            d = p.get("d") if p is not None else None
-            d_len = len(d) if isinstance(d, str) else 0
-
-            self.log(
-                logging.DEBUG,
-                f"[CP]   after nested intersection id={node.get('id')} d_len={d_len}"
-            )
-
-            local_paths.append(p)
-
-        self.log(logging.DEBUG, f"[CP]   local_paths={len(local_paths)}")
-
-        # 3. Union of all local paths → clipPath child union
-        if not local_paths:
-            self.log(logging.DEBUG, "[CP]   no local paths → returning None")
-            return None
-
-        merged = self.path_union(local_paths)
-
-        # 4. Safe logging of merged result
-        if merged is not None:
-            d = merged.get("d")
-            d_len = len(d) if isinstance(d, str) else 0
+        # accumulate transform on <clipPath>
+        if cp.get("transform"):
+            t = Transform(cp.get("transform"))
         else:
-            d_len = 0
+            t = Transform()
 
-        self.log(logging.DEBUG, f"[CP]   union result d_len={d_len}")
+        transform = transform @ t
 
-        return merged
+        # unify children WITHOUT applying their clip-paths
+        parts = [self.resolve_clippath_geometry(child, transform) for child in cp]
+        geom = self.path_union(parts)
 
+        # handle href / xlink:href on <clipPath> itself
+        ref = self.href_target(cp)
+        if ref is not None:
+            ref_geom = self.resolve_clippath(ref, transform)
+            geom = self.path_intersection(geom, ref_geom)
 
-
-
-
-    def convert_to_path(self, node, transform, replace_node=True):
-        """Convert any geometry node to a path element."""
-        tag = node.tag
-
-        if tag == inkex.addNS('path', 'svg'):
-            p = inkex.Path(node.get("d")).to_absolute() # type: ignore
-
-            if transform is not None:
-                p = p.transform(transform)
-
-            new_node = inkex.PathElement()
-            new_node.set("d", str(p))
-
-            self.copy_presentation_attributes(node, new_node)
-            return new_node
+        return geom
 
 
-        if tag == inkex.addNS('rect', 'svg'):
-            return self.rect_to_path(node, transform=transform, replace_node=replace_node)
 
-        if tag == inkex.addNS('circle', 'svg'):
-            return self.circle_to_path(node, transform=transform, replace_node=replace_node)
-
-        if tag == inkex.addNS('ellipse', 'svg'):
-            return self.ellipse_to_path(node, transform=transform, replace_node=replace_node)
-
-        if tag in (inkex.addNS('polygon', 'svg'), inkex.addNS('polyline', 'svg')):
-            return self.poly_to_path(node, transform=transform, replace_node=replace_node)
-
-        if tag == inkex.addNS('line', 'svg'):
-            return self.line_to_path(node, transform=transform, replace_node=replace_node)
-
-        # Unsupported geometry → ignore
-        return None
-
-    def merge_paths(self, paths):
-        if not paths:
-            return None
-
-        # Concatenate path data
-        d = " ".join(p.get("d") for p in paths if p is not None)
-
-        merged = inkex.PathElement()
-        merged.set("d", d)
-
-        # Determine fill-rule
-        fill_rules = {p.get("fill-rule") for p in paths if p.get("fill-rule")}
-        clip_rules = {p.get("clip-rule") for p in paths if p.get("clip-rule")}
-
-        # Apply correct fill-rule
-        if "evenodd" in fill_rules:
-            merged.set("fill-rule", "evenodd")
-        elif "nonzero" in fill_rules:
-            merged.set("fill-rule", "nonzero")
-
-        # Apply correct clip-rule
-        if "evenodd" in clip_rules:
-            merged.set("clip-rule", "evenodd")
-        elif "nonzero" in clip_rules:
-            merged.set("clip-rule", "nonzero")
-
-        return merged
+    def resolve_clippath_geometry(self, node, M):
+        self.log(logging.DEBUG, f"[CP]   resolve_clippath_geometry id={node.get('id')} tag={self.tag_name(node)} M={M}")
+        self.log(logging.DEBUG, f"[CP]   is_geometry={self.is_geometry(node, gt7_supported=True)} clip-path={node.get('clip-path')}")
 
 
-    def resolve_clippath(self, cp, parent_transform=Transform()):
+        # accumulate transform
+        if node.get("transform"):
+            t = Transform(node.get("transform"))
+            M = M @ t
+
+        tag = self.tag_name(node)
+
+        # geometry → path
+        if self.is_geometry(node, gt7_supported=True):
+            geom = self.convert_to_path(node, M)
+
+        # group → unify children
+        elif tag == "g":
+            parts = [self.resolve_clippath_geometry(child, M) for child in node]
+            geom = self.path_union(parts)
+
+        else:
+            return self.empty_path()
+
+        # apply clip-path to gemoetry (if any)
+        cp = self.get_clippath(node)
+        if cp is not None:
+            clip_geom = self.resolve_clippath(cp, M)
+            geom = self.path_intersection(geom, clip_geom)
+
+        return geom
+
+    def get_clippath(self, el):
         """
-        Resolve cp into a single flattened path.
-        Handles BOTH:
-        - <clipPath href="#otherClipPath">
-        - geometry inside clipPaths that has clip-path="url(#otherClipPath)"
+        Return the <clipPath> element referenced by el's clip-path attribute.
+        Follow href chains. Do NOT resolve geometry.
         """
 
-        # 1. Compute transform at this clipPath node
-        t = cp.get("transform")
-        M_here = parent_transform @ Transform(t) if t else parent_transform
-
-        self.log(
-            logging.DEBUG,
-            f"[CP] resolve_clippath cp_id={cp.get('id')} parent={parent_transform} "
-            f"local_t={t} M_here={M_here}"
-        )
-
-        self.log_svg(cp)
-
-        # 2. Merge local geometry (with correct transform)
-        merged = self.extract_clippath_geometry(cp, M_here)
-        if merged is None:
-            self.log(logging.DEBUG, f"[CP]   no local geometry for cp_id={cp.get('id')}")
+        # 1. Extract clip-path reference
+        cp_ref = el.get("clip-path")
+        if not cp_ref:
             return None
 
-        # 3. Resolve referenced clipPath via href="#..."
-        href = cp.get("href") or cp.get(f"{{{self.XLINK_NS}}}href")
-        self.log(logging.DEBUG, f"[CP]   href={href}")
+        # clip-path="url(#id)"
+        if cp_ref.startswith("url("):
+            cp_id = cp_ref[5:-1]  # strip url(# and )
+        else:
+            cp_id = cp_ref
 
-        if href and href.startswith("#"):
-            ref_id = href[1:]
-            ref = self.find_node(ref_id)
-            self.log(logging.DEBUG, f"[CP]   ref_id={ref_id} ref_tag={self.tag_name(ref) if ref else None}")
-            if ref is not None:
-                child_path = self.resolve_clippath(ref, M_here)
-                if child_path is not None:
-                    self.log(logging.DEBUG, f"[CP]   boolean_intersection cp_id={cp.get('id')} with ref_id={ref_id}")
-                    merged = self.path_intersection(merged, child_path)
+        # 2. Find the referenced node
+        cp = self.find_node(cp_id)
+        if cp is None:
+            return None
 
-        return merged
+        # 3. Follow href chains inside <clipPath>
+        while True:
+            href_target = self.href_target(cp)
+            if href_target is None:
+                break
+            cp = href_target
 
-
+        return cp
 
 
     def resolve_clippath_for_shape(self, shape):
         """
         Resolve the clipPath referenced by 'shape' into a flattened path,
-        clone the clipPath element, insert the flattened geometry, and
-        rewire the shape to use the new clipPath.
+        wrap it into a new <clipPath>, insert into <defs>, and rewire shape.
         """
 
-        # 1. Check if shape has a clip-path reference
-        val = shape.get("clip-path")
-        self.log(
-            logging.DEBUG,
-            f"[CP] resolve_clippath_for_shape shape_id={shape.get('id')} clip-path={val}"
-        )
-        
-        if not val or not val.startswith("url(#"):
-            return 0
-
-        cp_id = val[5:-1]
-        cp = self.find_node(cp_id)
-        self.log(logging.DEBUG, f"[CP]   cp_id={cp_id} cp_tag={self.tag_name(cp) if cp is not None else None}")
-
+        # 1. Get structural <clipPath> element
+        cp = self.get_clippath(shape)
         if cp is None:
             return 0
 
-        # 2. Resolve clipPath geometry (with full transform chain)
+        # 2. Resolve clipPath geometry (two‑mode resolver)
         flattened = self.resolve_clippath(cp, Transform())
-        self.log(
-            logging.DEBUG,
-            f"[CP]   flattened is None? {flattened is None} "
-            f"d_len={len(str(flattened.get('d'))) if flattened is not None else 0}"
-        )
-        
         if flattened is None:
-            # No geometry → nothing to clip
+            # No geometry → remove clip-path
             shape.attrib.pop("clip-path", None)
             return 0
 
-        # 3. Clone clipPath element (without ID)
-        clone = inkex.etree.Element(cp.tag, nsmap=cp.nsmap)
-        for k, v in cp.attrib.items():
-            if k != "id":
-                clone.set(k, v)
+        # 3. Wrap flattened geometry into a new <clipPath>
+        #    (GT7-safe: only <path> children, no forbidden attributes)
+        svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
+        cp_new = inkex.etree.Element(f"{{{svg_ns}}}clipPath")
 
-        # 4. Insert flattened geometry into clone
-        clone.append(flattened)
+        # Copy flattened geometry into the new <clipPath>
+        cp_new.append(flattened)
+        cp_new.attrib.pop("id", None)
 
-        # 5. Insert clone into <defs> and assign a new ID
+        # 4. Insert new <clipPath> into <defs> and assign new ID
         defs = self.ensure_defs()
-        self.add_node(clone, defs)   # assigns new ID automatically
+        cp_clone = self.add_node(cp_new, defs)
+        new_id = cp_clone.get("id")
 
-        # 6. Rewire shape to use the new clipPath
-        new_id = clone.get("id")
+        # 5. Rewire shape to use the new clipPath
         shape.set("clip-path", f"url(#{new_id})")
 
         return 1
+
 
 # ---- Inkscape Actions ----
 
