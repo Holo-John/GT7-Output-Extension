@@ -2403,6 +2403,13 @@ class GT7Export(inkex.OutputExtension):
         Extract geometry inside cp, flatten groups, accumulate transforms,
         convert to paths, resolve nested clip-path attributes, and merge
         into a single path.
+
+        SVG semantics:
+        - All child shapes of <clipPath> are UNIONed to form the clip region.
+        - If a child has clip-path="url(#...)", that child is first
+        INTERSECTED with the referenced clipPath.
+        - If this <clipPath> has href="#otherClipPath", the final region
+        is INTERSECTED with that referenced clipPath.
         """
 
         self.log(
@@ -2410,7 +2417,8 @@ class GT7Export(inkex.OutputExtension):
             f"[CP] extract_clippath_geometry cp_id={cp.get('id')} parent={parent_transform}"
         )
 
-        geom = []
+        # 1. Collect geometry + accumulated transforms
+        geom: list[tuple[inkex.BaseElement, Transform]] = []
         self.collect_clippath_geometry(cp, parent_transform, geom)
 
         self.log(
@@ -2419,8 +2427,9 @@ class GT7Export(inkex.OutputExtension):
             f"{[n.get('id') for (n, _) in geom]}"
         )
 
-        local_paths = []
+        local_paths: list[inkex.PathElement] = []
 
+        # 2. Convert each geometry node to a path and resolve nested clip-path
         for node, M in geom:
             self.log(
                 logging.DEBUG,
@@ -2430,48 +2439,74 @@ class GT7Export(inkex.OutputExtension):
 
             p = self.convert_to_path(node, transform=M, replace_node=False)
             if p is None:
-                self.log(logging.DEBUG, f"[CP]   -> convert_to_path returned None")
+                self.log(logging.DEBUG, "[CP]   -> convert_to_path returned None")
                 continue
 
-            # ⭐ Nested clip-path="url(#...)"
+            # Nested clip-path on the geometry itself: intersection
             cp_val = node.get("clip-path")
             if cp_val and cp_val.startswith("url(#"):
                 ref_id = cp_val[5:-1]
-                self.log(logging.DEBUG, f"[CP]   nested clip-path on {node.get('id')} → {ref_id}")
+                self.log(
+                    logging.DEBUG,
+                    f"[CP]   nested clip-path on {node.get('id')} → {ref_id}"
+                )
 
                 ref = self.find_node(ref_id)
                 if ref is None:
-                    self.log(logging.DEBUG, f"[CP]   nested cp_id={ref_id} NOT FOUND")
+                    self.log(
+                        logging.DEBUG,
+                        f"[CP]   nested cp_id={ref_id} NOT FOUND"
+                    )
                 else:
-                    self.log(logging.DEBUG, f"[CP]   resolving nested cp_id={ref_id}")
+                    self.log(
+                        logging.DEBUG,
+                        f"[CP]   resolving nested cp_id={ref_id}"
+                    )
                     ref_path = self.resolve_clippath(ref, Transform())
                     if ref_path is None:
-                        self.log(logging.DEBUG, f"[CP]   nested cp_id={ref_id} resolved to None")
+                        self.log(
+                            logging.DEBUG,
+                            f"[CP]   nested cp_id={ref_id} resolved to None"
+                        )
                     else:
-                        self.log(logging.DEBUG, f"[CP]   boolean_intersection {node.get('id')} ∩ {ref_id}")
-                        p = self.boolean_intersection(p, ref_path)
+                        self.log(
+                            logging.DEBUG,
+                            f"[CP]   boolean_intersection {node.get('id')} ∩ {ref_id}"
+                        )
+                        p = self.path_intersection(p, ref_path)
 
-            self.log(logging.DEBUG, f"[CP]   after nested intersection id={node.get('id')} d_len={len(p.get('d')) if p is not None and isinstance(p.get('d'), str) else 0}")
+            # Safe d_len logging
+            d = p.get("d") if p is not None else None
+            d_len = len(d) if isinstance(d, str) else 0
+
+            self.log(
+                logging.DEBUG,
+                f"[CP]   after nested intersection id={node.get('id')} d_len={d_len}"
+            )
 
             local_paths.append(p)
 
         self.log(logging.DEBUG, f"[CP]   local_paths={len(local_paths)}")
 
+        # 3. Union of all local paths → clipPath child union
         if not local_paths:
-            self.log(logging.DEBUG, f"[CP]   no local paths → returning None")
+            self.log(logging.DEBUG, "[CP]   no local paths → returning None")
             return None
 
-        merged = self.merge_paths(local_paths)
+        merged = self.path_union(local_paths)
 
-        if merged is None:
-            d_len = 0
-        else:
+        # 4. Safe logging of merged result
+        if merged is not None:
             d = merged.get("d")
             d_len = len(d) if isinstance(d, str) else 0
+        else:
+            d_len = 0
 
-        self.log(logging.DEBUG, f"[CP]   merged path d_len={d_len}")
+        self.log(logging.DEBUG, f"[CP]   union result d_len={d_len}")
 
         return merged
+
+
 
 
 
@@ -2577,7 +2612,7 @@ class GT7Export(inkex.OutputExtension):
                 child_path = self.resolve_clippath(ref, M_here)
                 if child_path is not None:
                     self.log(logging.DEBUG, f"[CP]   boolean_intersection cp_id={cp.get('id')} with ref_id={ref_id}")
-                    merged = self.boolean_intersection(merged, child_path)
+                    merged = self.path_intersection(merged, child_path)
 
         return merged
 
@@ -2640,9 +2675,9 @@ class GT7Export(inkex.OutputExtension):
 
         return 1
 
+# ---- Inkscape Actions ----
 
-
-    def boolean_intersection(self, pathA, pathB):
+    def path_intersection(self, pathA, pathB):
             # Build minimal SVG
             minimal_svg = """<svg xmlns="http://www.w3.org/2000/svg"></svg>"""
             doc = inkex.load_svg(minimal_svg)
@@ -2659,9 +2694,7 @@ class GT7Export(inkex.OutputExtension):
             b.set("d", pathB.get("d"))
             root.append(b)
 
-            # Serialize SVG to string
             svg_input = inkex.etree.tostring(root, encoding="unicode")
-
             self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
 
             # Actions to perform on the selected paths
@@ -2698,6 +2731,57 @@ class GT7Export(inkex.OutputExtension):
             new_path = inkex.PathElement()
             new_path.set("d", intersection.get("d"))
             return new_path
+    
+    def path_union(self, paths):
+        # Build minimal SVG
+        minimal_svg = """<svg xmlns="http://www.w3.org/2000/svg"></svg>"""
+        doc = inkex.load_svg(minimal_svg)
+        root = doc.getroot()
+
+        ids = []
+        for i, p in enumerate(paths):
+            elem = inkex.PathElement()
+            elem_id = f"u{i}"
+            elem.set("id", elem_id)
+            elem.set("d", p.get("d"))
+            root.append(elem)
+            ids.append(elem_id)
+
+        select_ids = ",".join(ids)
+
+        svg_input = inkex.etree.tostring(root, encoding="unicode")
+        self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
+
+        actions = "path-union"
+
+        result_bytes = inkex.command.inkscape_command(
+            doc,
+            select=select_ids,
+            actions=actions,
+        )
+
+        result_doc = inkex.load_svg(result_bytes)
+        result_root = result_doc.getroot()
+
+        svg_output = inkex.etree.tostring(result_root, encoding="unicode")
+        self.log(logging.DEBUG,f"Inkscape ouput:\n {svg_output}")
+
+        # Extract union result
+        out_paths = result_root.findall(".//{http://www.w3.org/2000/svg}path")
+        candidates = [p for p in out_paths if p.get("id") not in ids]
+
+        if candidates:
+            union = candidates[-1]
+        else:
+            union = out_paths[-1] if out_paths else None
+
+        if union is None:
+            return None
+
+        new_path = inkex.PathElement()
+        new_path.set("d", union.get("d"))
+        return new_path
+
 
 if __name__ == "__main__":
     GT7Export().run()
