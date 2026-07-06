@@ -2964,6 +2964,8 @@ class GT7Export(inkex.OutputExtension):
         root = doc.getroot()
 
         for i, node in enumerate(nodes):
+            if not hasattr(node, "copy"):
+                continue
             clone = node.copy()
             clone.set("id", f"n{i}")
             self.copy_presentation_attributes(node, clone)
