@@ -3,11 +3,12 @@ import tempfile
 import os
 import pytest
 
-from test.InkscapeWrapper import (
+from InkscapeHarness import (
     run_extension_on_svg,
     render_svg_to_png,
     compare_images,
-    save_diff_image
+    save_diff_image,
+    assert_gt7_compliant_file
 )
 from src.gt7_export import GT7Export
 
@@ -58,6 +59,8 @@ def test_radialGradients_case(case_name, svg_path):
 
         # Do NOT delete files on failure
         raise AssertionError(f"Gradient test '{case_name}' failed (SSIM={score})")
+    
+    assert_gt7_compliant_file(actual_svg)
 
     # Cleanup only on success
     try:

@@ -1611,25 +1611,16 @@ class GT7Export(inkex.OutputExtension):
         self.log(logging.DEBUG, f"[REF] Final referenced ids: {sorted(referenced)}")
         return referenced
     
-    def normalize_defs(self):
-        defs = sdefs = self.find_node("defs3")
-        if defs is None:
-            return
-
-        for child in list(defs):
-            # Remove ANY non-element node
-            if not isinstance(child.tag, str):
-                defs.remove(child)
-
-        
+    
     def cleanup_defs(self):
-        self.normalize_defs()
 
         defs = self.svg.find(".//{http://www.w3.org/2000/svg}defs")
         if defs is None:
             return
 
-        while True:
+        removed_any = True
+
+        while removed_any:
             referenced = self.collect_referenced_ids()
             removed_any = False
 
@@ -1649,11 +1640,9 @@ class GT7Export(inkex.OutputExtension):
                         f"[DEFS] Keeping defs child id={cid}"
                     )
 
-            if not removed_any:
-                break
 
     def log_defs(self):
-        defs = self.find_node("defs3")
+        defs = self.find_node("defs")
         if defs is None:
             self.log(logging.DEBUG, "No <defs> element found")
             return

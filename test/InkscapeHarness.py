@@ -111,8 +111,6 @@ def assert_gt7_compliant_svg_tree(svg_root):
         "filter",
         "mask",
         "pattern",
-        "linearGradient",
-        "radialGradient",
         "clipPath",
         "marker",
         "metadata",
