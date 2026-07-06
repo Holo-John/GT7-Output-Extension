@@ -421,7 +421,7 @@ class GT7Export(inkex.OutputExtension):
         full=True  → all SVG geometry types that can be converted to paths
         """
 
-        tag = el.tag_name
+        tag = self.tag_name(el)
 
         if gt7_supported:
             # GT7-safe geometry
@@ -474,15 +474,6 @@ class GT7Export(inkex.OutputExtension):
         combined = t @ base
         el.set("transform", str(combined))
 
-        
-    #def transform_path(self, node, transform):
-    #    d = node.get("d")
-    #    if d:
-    #        p = inkex.Path(d) # type: ignore
-    #        p = p.transform(transform)
-    #        node.set("d", str(p))
-
-    #    return node
 
     def transform_path(self, node, transform):
         # Parse existing path, preserving all subpaths
@@ -493,12 +484,6 @@ class GT7Export(inkex.OutputExtension):
 
         # Write back
         node.path = p
-
-        # Preserve fill-rule and style
-        if node.get("fill-rule"):
-            node.set("fill-rule", node.get("fill-rule"))
-        if node.get("style"):
-            node.set("style", node.get("style"))
 
         return node
 
@@ -865,9 +850,25 @@ class GT7Export(inkex.OutputExtension):
                 # Parse existing path, preserving all subpaths
                 p = node.path.to_absolute()
 
+                self.log(logging.DEBUG,
+                    f"[CTP] BEFORE transform: id={node.get('id')} "
+                    f"fill-rule={node.get('fill-rule')} "
+                    f"style={node.get('style')} "
+                    f"subpaths={len(node.path.to_absolute())}"
+                )
+
+
                 # Apply transform safely
                 if transform is not None:
                     p = p.transform(transform)
+
+                self.log(logging.DEBUG,
+                    f"[CTP] AFTER transform: id={node.get('id')} "
+                    f"fill-rule={node.get('fill-rule')} "
+                    f"style={node.get('style')} "
+                    f"subpaths={len(p)}"
+                )
+
 
                 # Create new node (clone) or replacement
                 new_node = inkex.PathElement()
@@ -888,6 +889,14 @@ class GT7Export(inkex.OutputExtension):
                     parent, idx = self.parent_of(node)
                     self.remove_node(node, parent)
                     self.add_node(new_node, parent, idx)
+
+                self.log(logging.DEBUG,
+                    f"[CTP] NEW_NODE: id={new_node.get('id')} "
+                    f"fill-rule={new_node.get('fill-rule')} "
+                    f"style={new_node.get('style')} "
+                    f"subpaths={len(new_node.path)}"
+                )
+
 
                 return new_node
 
@@ -2657,11 +2666,13 @@ class GT7Export(inkex.OutputExtension):
             a = inkex.PathElement()
             a.set("id", "boolA")
             a.set("d", pathA.get("d"))
+            self.copy_presentation_attributes(pathA, a)
             root.append(a)
 
             b = inkex.PathElement()
             b.set("id", "boolB")
             b.set("d", pathB.get("d"))
+            self.copy_presentation_attributes(pathB, b)
             root.append(b)
 
             svg_input = inkex.etree.tostring(root, encoding="unicode")
@@ -2696,10 +2707,20 @@ class GT7Export(inkex.OutputExtension):
                 intersection = paths[-1] if paths else None
 
             if intersection is None:
-                return None
+                return self.empty_path()
 
             new_path = inkex.PathElement()
             new_path.set("d", intersection.get("d"))
+
+            # Copy full path geometry
+            if hasattr(intersection, "path"):
+                new_path.path = intersection.path
+            else:
+                new_path.set("d", intersection.get("d"))
+
+            # Copy presentation attributes
+            self.copy_presentation_attributes(intersection, new_path)
+
             return new_path
     
     def path_union(self, paths):
@@ -2714,6 +2735,7 @@ class GT7Export(inkex.OutputExtension):
             elem_id = f"u{i}"
             elem.set("id", elem_id)
             elem.set("d", p.get("d"))
+            self.copy_presentation_attributes(p, elem)
             root.append(elem)
             ids.append(elem_id)
 
@@ -2750,6 +2772,7 @@ class GT7Export(inkex.OutputExtension):
 
         new_path = inkex.PathElement()
         new_path.set("d", union.get("d"))
+        self.copy_presentation_attributes(union, new_path)
         return new_path
 
 
