@@ -2973,43 +2973,41 @@ class GT7Export(inkex.OutputExtension):
 
 
     def rasterize_nodes(self, nodes):
-        """
-        Rasterize a list of inkex nodes using Inkscape's renderer via inkex actions API.
-        Computes width & height automatically from node geometry.
-        Returns PNG bytes.
-        """
+            """
+            Rasterize a list of inkex nodes using Inkscape's renderer via inkex actions API.
+            Computes width & height automatically from node geometry.
+            Returns PNG bytes.
+            """
 
-        # 1) Build SVG input
-        doc = self.build_svg_from_nodes(nodes)
-        root = doc.getroot()
-        svg_input = inkex.etree.tostring(root, encoding="unicode")
-        self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
+            # 1) Build SVG input
+            doc = self.build_svg_from_nodes(nodes)
+            root = doc.getroot()
+            svg_input = inkex.etree.tostring(root, encoding="unicode")
+            self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
 
-        # 2) Create temp PNG filename
-        tmp_png = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        tmp_png_path = tmp_png.name
-        tmp_png.close()
+            # 2) Create temp PNG filename
+            tmp_png = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp_png_path = tmp_png.name
+            tmp_png.close()
 
-        # 3) Rasterize using Inkscape actions API
-        inkex.command.inkscape_command(
-            doc,
-            actions=[
-                {"action": "export-filename", "value": tmp_png_path},
-                {"action": "export-type", "value": "png"}
-            ]
-        )
+            # 3) Rasterize using Inkscape actions API
+            inkex.command.inkscape_command(
+                doc,
+                actions=";".join([f"export-filename:{tmp_png_path}", "export-type:png",
+                    "export-dpi:300", "export-area-page", "export-do"])
+            )
 
-        self.log(logging.DEBUG, f"Rasterizer PNG path: {tmp_png_path}")
+            self.log(logging.DEBUG, f"Rasterizer PNG path: {tmp_png_path}")
 
-        # 4) Read PNG bytes
-        with open(tmp_png_path, "rb") as f:
-            png_bytes = f.read()
+            # 4) Read PNG bytes
+            with open(tmp_png_path, "rb") as f:
+                png_bytes = f.read()
 
-        os.remove(tmp_png_path)
+            os.remove(tmp_png_path)
 
-        self.log(logging.DEBUG,f"Read {png_bytes.__sizeof__()} bytes")
+            self.log(logging.DEBUG,f"Read {len(png_bytes)} bytes")
 
-        return png_bytes
+            return png_bytes
 
 
 if __name__ == "__main__":
