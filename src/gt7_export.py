@@ -38,6 +38,22 @@ class GT7Export(inkex.OutputExtension):
     """Save As → GT7 SVG"""
     
     STRIP_ALPHA_FROM_COLOR = True
+
+    GT7_ATTRS = {
+        "id",
+        "d",
+        "x", "y",
+        "cx", "cy", 
+        "r", "rx", "ry",
+        "width", "height",
+        "transform",
+        "fill", "stroke", "stroke-width",
+        "fill-rule",
+        "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
+        "opacity", "fill-opacity", "stroke-opacity",
+        "clip-path",
+    }
+
     
     STROKE_ATTRS = [
         "stroke",
@@ -87,6 +103,13 @@ class GT7Export(inkex.OutputExtension):
         "fill-opacity": "1",
         "stroke-opacity": "1",
     }
+
+    REFERENCEABLE_TAGS = {
+        "clipPath", "mask", "filter",
+        "pattern", "linearGradient", "radialGradient",
+        "symbol", "marker"
+    }
+
 
     XLINK_NS = "http://www.w3.org/1999/xlink"
 
@@ -208,6 +231,7 @@ class GT7Export(inkex.OutputExtension):
             self.clean_stroke_attributes()
             self.compress_output()
             self.cleanup_defs()
+            self.remove_unreferenced_referenceables()
             self.log_svg(header="AFTER cleanup_defs()")
 
             svg_bytes = inkex.etree.tostring(
@@ -1585,31 +1609,40 @@ class GT7Export(inkex.OutputExtension):
     def collect_referenced_ids(self):
         referenced = set()
 
-        # Modern inkex root access
-        for el in self.svg.iter():
-            for attr in self.REF_ATTRS:
+        REF_ATTRS = (
+            "clip-path", "mask", "filter",
+            "fill", "stroke",
+            "marker-start", "marker-mid", "marker-end",
+            "href", "{http://www.w3.org/1999/xlink}href"
+        )
+
+        for el in self.svg.xpath(".//*[@*]"):
+            # Direct attributes
+            for attr in REF_ATTRS:
                 val = el.get(attr)
                 if not val:
                     continue
 
                 # url(#id)
                 if val.startswith("url(#") and val.endswith(")"):
-                    ref_id = val[5:-1]
-                    referenced.add(ref_id)
-                    self.log(logging.DEBUG,
-                        f"[REF] url(#...) attr={attr} on id={el.get('id')} → {ref_id}"
-                    )
+                    referenced.add(val[5:-1])
 
-                # bare #id
+                # href="#id"
                 if val.startswith("#"):
-                    ref_id = val[1:]
-                    referenced.add(ref_id)
-                    self.log(logging.DEBUG,
-                        f"[REF] bare #... attr={attr} on id={el.get('id')} → {ref_id}"
-                    )
+                    referenced.add(val[1:])
 
-        self.log(logging.DEBUG, f"[REF] Final referenced ids: {sorted(referenced)}")
+            # Style attribute
+            style = el.get("style")
+            if style and "url(#" in style:
+                for part in style.split(";"):
+                    if "url(#" in part:
+                        start = part.find("url(#") + 5
+                        end = part.find(")", start)
+                        if end > start:
+                            referenced.add(part[start:end])
+
         return referenced
+
     
     
     def cleanup_defs(self):
@@ -1624,7 +1657,7 @@ class GT7Export(inkex.OutputExtension):
             referenced = self.collect_referenced_ids()
             removed_any = False
 
-            for child in list(defs):
+            for child in defs.xpath("./*"):
                 cid = child.get("id")
                 if not cid:
                     continue
@@ -1654,6 +1687,39 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.DEBUG, f"defs child: tag={tag} id={cid} attrib={dict(child.attrib)}")
         self.log(logging.DEBUG, "--- END DEFS ---")
 
+    def remove_unreferenced_referenceables(self):
+        referenced = self.collect_referenced_ids()
+
+        # Namespace-safe lookup
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+
+        removed_any = True
+
+        while removed_any:
+
+            removed_any = False
+
+            # Find all elements with an id
+            for el in self.svg.xpath(".//svg:*[@id]", namespaces=ns):
+                cid = el.get("id")
+                tag = self.tag_name(el)
+
+                # Only remove referenceable elements
+                if tag not in self.REFERENCEABLE_TAGS:
+                    continue
+
+                # Keep referenced ones
+                if cid in referenced:
+                    continue
+
+                # Remove unreferenced ones
+                parent = el.getparent()
+                if parent is not None:
+                    self.log(logging.DEBUG,
+                        f"[CLEANUP] Removing unreferenced {tag} id={cid}"
+                    )
+                    parent.remove(el)
+                    removed_any=True
 
 
 #--- Clean Attributes ---
@@ -1689,73 +1755,6 @@ class GT7Export(inkex.OutputExtension):
 
 #--- Strip Output ---
 
-    def remove_inkscape_metadata(self):
-        # Modern inkex root access
-        root = self.svg
-
-        # nsmap is immutable → cannot be modified directly
-        # Instead, use your full namespace‑stripping pipeline
-        self.strip_editor_namespaces_from_all_elements()
-
-
-    def strip_editor_namespaces_from_all_elements(self):
-        root = self.svg
-
-        bad_ns = (
-            "http://www.inkscape.org/namespaces/inkscape",
-            "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd",
-            "http://www.w3.org/1999/xlink",
-        )
-
-        for el in list(root.iter()):
-            tag = self.tag_name(el)
-
-            # Remove editor-only elements that break Inkex when namespace is stripped
-            if tag in ("namedview", "guide"):
-                parent = el.getparent()
-                if parent is not None:
-                    parent.remove(el)
-                continue
-
-            # Skip non-element nodes
-            if not isinstance(el.tag, str):
-                continue
-
-            # Extract localname (strip namespace)
-            if el.tag.startswith("{"):
-                uri, local = el.tag[1:].split("}", 1)
-            else:
-                uri, local = None, el.tag
-
-            # If the element is in a bad namespace → rewrite tag
-            if uri in bad_ns:
-                new_tag = local
-            else:
-                new_tag = el.tag if uri is None else f"{{{uri}}}{local}"
-
-            # Build cleaned nsmap (remove bad namespaces)
-            new_nsmap = {
-                prefix: ns
-                for prefix, ns in (el.nsmap or {}).items()
-                if ns not in bad_ns
-            }
-
-            # Rebuild element
-            new_el = inkex.etree.Element(new_tag, nsmap=new_nsmap)
-            new_el.attrib.update(el.attrib)
-            new_el[:] = el[:]
-
-            parent = el.getparent()
-            if parent is None:
-                # DO NOT replace root — mutate it instead
-                el.tag = new_tag
-                el.attrib.clear()
-                el.attrib.update(new_el.attrib)
-                el[:] = new_el[:]
-            else:
-                parent.replace(el, new_el)
-
-
     def round_all_coordinates(self, node=None):
         # Modern inkex root access
         if node is None:
@@ -1787,72 +1786,6 @@ class GT7Export(inkex.OutputExtension):
             if "gradientTransform" in el.attrib:
                 el.set("gradientTransform", self.round_floats_in_string(el.get("gradientTransform")))
 
-    def remove_editor_elements(self, node=None):
-        if node is None:
-            node = self.svg
-
-        for el in list(node):
-            tag = el.tag
-
-            if not isinstance(tag, str):
-                continue
-
-            # Extract namespace + local
-            if tag.startswith("{"):
-                uri, local = tag[1:].split("}", 1)
-            else:
-                uri, local = None, tag
-
-            # SPECIAL CASE: remove namedview entirely
-            if local == "namedview" and uri in (
-                "http://www.inkscape.org/namespaces/inkscape",
-                "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd",
-            ):
-                node.remove(el)
-                continue
-
-            # Remove Inkscape/Sodipodi namespaced elements
-            if uri in (
-                "http://www.inkscape.org/namespaces/inkscape",
-                "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd",
-            ):
-                node.remove(el)
-                continue
-
-            self.remove_editor_elements(el)
-
-
-    def remove_editor_attributes(self, node=None):
-        if node is None:
-            node = self.svg
-
-        for el in node.iter():
-            tag = el.tag
-
-            # Skip namedview entirely
-            if isinstance(tag, str) and tag.endswith("namedview"):
-                continue
-
-            for attr in list(el.attrib.keys()):
-                if attr.startswith("inkscape:") or attr.startswith("sodipodi:"):
-                    del el.attrib[attr]
-                    continue
-
-                if ":" in attr:
-                    del el.attrib[attr]
-                    continue
-
-                if attr == "xlink:href":
-                    del el.attrib[attr]
-                    continue
-
-                if attr in ("transform-center-x", "transform-center-y"):
-                    del el.attrib[attr]
-                    continue
-
-                if attr.startswith("tile-"):
-                    del el.attrib[attr]
-                    continue
 
     def remove_comments(self, node=None):
         if node is None:
@@ -1912,16 +1845,42 @@ class GT7Export(inkex.OutputExtension):
         for child in node:
             self.remove_redundant_attributes(child, local_inherited)
 
+    def remove_non_gt7_attributes(self, node=None):
+        if node is None:
+            node = self.svg
+
+        tag = self.tag_name(node)
+        id = node.get("id")
+
+        self.log(logging.DEBUG,f"Inspecting node {tag} id={id}")
+
+                # Recurse
+        for child in node:
+            self.remove_non_gt7_attributes(child)
+
+        # Skip non geometry nodes
+        if not self.is_geometry(node):
+            self.log(logging.DEBUG,f"Ignoring node {tag} id={id}")
+            return
+
+        # Remove all attributes not in whitelist
+        for attr in list(node.attrib.keys()):
+            self.log(logging.DEBUG,f"Inspecting atribute {tag} id={id} attr={attr}")
+
+            if attr not in self.GT7_ATTRS:
+                self.log(logging.DEBUG,f"Removed attribute {attr} from node {tag} id={id}")
+                node.attrib.pop(attr, None)
+
+
+
 
     def compress_output(self):
-        #self.remove_inkscape_metadata()
-        #self.strip_editor_namespaces_from_all_elements()
-        #self.remove_editor_elements()
-        #self.remove_editor_attributes()
         self.remove_comments()
         self.group_by_common_presentation_attributes()
         self.round_all_coordinates()
+        self.remove_non_gt7_attributes()
         self.remove_redundant_attributes()
+        
         
         self.log(logging.INFO, f"Compressed output")
 
