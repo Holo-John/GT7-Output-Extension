@@ -198,7 +198,8 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.INFO, f"Resolved {transform_count} transformations into plain geometry")
             self.log_svg(header="AFTER apply_all_transforms()")
 
-            self.remove_all_clippaths()
+            clip_count = self.remove_all_clippaths()
+            self.log(logging.INFO, f"Resolved {clip_count} clip-paths into plain geometry")
             self.log_svg(header="AFTER remove_all_clippaths()")
             
             self.translate_viewbox()
