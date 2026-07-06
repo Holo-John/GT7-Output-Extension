@@ -84,3 +84,102 @@ def compare_images(img1_path: str, img2_path: str) -> Tuple[float, npt.NDArray[n
 def save_diff_image(diff, path):
     plt.imsave(path, diff, cmap="gray")
 
+
+def assert_gt7_compliant_file(filename):
+    """
+    Load an SVG file from disk and assert GT7 compliance.
+    Delegates to assert_gt7_compliant(svg_root).
+    """
+    import inkex
+
+    # Load SVG document
+    doc = inkex.load_svg(filename)
+    root = doc.getroot()
+
+    # Delegate to your existing compliance checker
+    return assert_gt7_compliant_svg_tree(root)
+
+
+
+def assert_gt7_compliant_svg_tree(svg_root):
+    """
+    Assert that the SVG DOM contains no GT7-forbidden constructs.
+    Raises AssertionError with a precise message on violation.
+    """
+
+    forbidden_tags = {
+        "filter",
+        "mask",
+        "pattern",
+        "linearGradient",
+        "radialGradient",
+        "clipPath",
+        "marker",
+        "metadata",
+        "foreignObject",
+        "symbol",
+        "use",
+    }
+
+    forbidden_attributes = {
+        "filter",
+        "mask",
+        "clip-path",
+        "marker-start",
+        "marker-mid",
+        "marker-end",
+        "paint-order",
+        "aria-label",
+        "text-anchor",
+        "vector-effect",
+        "mix-blend-mode",
+    }
+
+    # 1. Check forbidden tags anywhere in the DOM
+    for el in svg_root.iter():
+        tag = el.tag.split("}")[-1]  # strip namespace
+        if tag in forbidden_tags:
+            raise AssertionError(f"GT7 violation: forbidden tag <{tag}> found")
+
+        # 2. Check forbidden attributes
+        for attr in forbidden_attributes:
+            if attr in el.attrib:
+                raise AssertionError(
+                    f"GT7 violation: forbidden attribute '{attr}' on <{tag}>"
+                )
+
+        # 3. Check style-based forbidden references
+        style = el.attrib.get("style", "")
+        if "filter:" in style:
+            raise AssertionError("GT7 violation: filter reference inside style")
+        if "mask:" in style:
+            raise AssertionError("GT7 violation: mask reference inside style")
+        if "clip-path:" in style:
+            raise AssertionError("GT7 violation: clip-path reference inside style")
+        if "marker-" in style:
+            raise AssertionError("GT7 violation: marker reference inside style")
+
+    # 4. Check <defs> contains no forbidden children
+    defs = svg_root.find(".//{http://www.w3.org/2000/svg}defs")
+    if defs is not None:
+        for child in defs:
+            tag = child.tag.split("}")[-1]
+            if tag in forbidden_tags:
+                raise AssertionError(
+                    f"GT7 violation: forbidden <{tag}> found inside <defs>"
+                )
+
+    # 5. Check no <style> blocks exist
+    style_blocks = svg_root.findall(".//{http://www.w3.org/2000/svg}style")
+    if style_blocks:
+        raise AssertionError("GT7 violation: <style> blocks are not allowed")
+
+    # 6. Check no embedded scripts
+    script_blocks = svg_root.findall(".//{http://www.w3.org/2000/svg}script")
+    if script_blocks:
+        raise AssertionError("GT7 violation: <script> blocks are not allowed")
+
+    # If we reach here, the file is compliant
+    return True
+
+

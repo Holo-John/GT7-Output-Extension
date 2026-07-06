@@ -701,12 +701,47 @@ class GT7Export(inkex.OutputExtension):
         # Remove original <use>
         self.remove_node(node, parent)
 
+    def remove_filter_for_element(self, el):
+        """
+        Remove filter references and delete corresponding <filter> nodes.
+        Returns number of filters removed.
+        """
+        removed = 0
 
+        # Check direct filter attribute
+        filter_ref = el.get("filter")
+        if filter_ref:
+            el.attrib.pop("filter", None)
+            tag = self.tag_name(el)
+            id = el.get("id")
+            self.log(logging.WARNING, f"Removed filter from <{tag} id='{id}'>")
+            return 1
 
+        return 0
+    
+    def remove_mask_for_element(self, el):
+        """
+        Remove mask references and delete corresponding <mask> nodes.
+        Returns number of masks removed.
+        """
+        removed = 0
+
+        # Check direct mask attribute
+        mask_ref = el.get("mask")
+        if mask_ref:
+            el.attrib.pop("mask", None)
+            tag = self.tag_name(el)
+            id = el.get("id")
+            self.log(logging.WARNING, f"Removed mask from <{tag} id='{id}'>")
+            return 1
+
+        return 0
 
     def resolve_references(self):
         grad_count = 0
         clip_count = 0
+        filter_count = 0
+        mask_count = 0
 
         for el in list(self.svg.iter()):
             tag = self.tag_name(el)
@@ -715,9 +750,16 @@ class GT7Export(inkex.OutputExtension):
                 case "path" | "rect" | "circle" | "ellipse":
                     grad_count += self.resolve_gradient_for_shape(el)
                     clip_count += self.resolve_clippath_for_shape(el)
+                    filter_count += self.remove_filter_for_element(el)
+                    mask_count += self.remove_mask_for_element(el)
 
                 case "clippath":
                     clip_count += self.resolve_clippath_for_shape(el)
+
+                case _:
+                    # Filters/masks can appear on ANY element
+                    filter_count += self.remove_filter_for_element(el)
+                    mask_count += self.remove_mask_for_element(el)
 
         if grad_count:
             self.log(logging.INFO, f"Normalized {grad_count} gradients")
@@ -725,7 +767,14 @@ class GT7Export(inkex.OutputExtension):
         if clip_count:
             self.log(logging.INFO, f"Resolved {clip_count} clip paths")
 
+        if filter_count:
+            self.log(logging.INFO, f"Removed {filter_count} filters")
+
+        if mask_count:
+            self.log(logging.INFO, f"Removed {mask_count} masks")
+
         self.log_defs()
+
 
             
 
