@@ -18,7 +18,9 @@ import tempfile
 import logging
 import io
 from datetime import datetime
+import numpy as np
 from numpy import clip
+from PIL import Image
 
 LOG_LEVEL = logging.DEBUG
 
@@ -737,11 +739,55 @@ class GT7Export(inkex.OutputExtension):
 
         return 0
 
+    def remove_pattern_for_element(self, el):
+        """
+        Replace pattern fill with mean color and remove the pattern reference.
+        Returns number of patterns removed (0 or 1).
+        """
+
+        fill = el.get("fill")
+        if not fill or not fill.startswith("url(#"):
+            return 0
+
+        # Extract ID from url(#ID)
+        ref_id = fill[5:-1]
+
+        # Resolve referenced element
+        ref = self.find_node(ref_id)
+        if ref is None:
+            return 0
+
+        # Only handle <pattern>, ignore other references
+        tag = self.tag_name(ref)
+        if tag != "pattern":
+            return 0
+
+        # Collect geometry nodes inside the pattern
+        nodes = list(ref.iterchildren())
+
+        # Compute mean color
+        mean_color = self.pattern_mean_color(nodes) if nodes else "#000000"
+
+        # Replace fill with solid color
+        el.set("fill", mean_color)
+
+        # Logging
+        tag = self.tag_name(el)
+        id = el.get("id")
+        self.log(logging.WARNING,
+                f"Replaced pattern '{ref_id}' with fill '{mean_color}' "
+                f"on <{tag} id='{id}'>")
+
+        return 1
+
+
+
     def resolve_references(self):
         grad_count = 0
         clip_count = 0
         filter_count = 0
         mask_count = 0
+        pattern_count = 0
 
         for el in list(self.svg.iter()):
             tag = self.tag_name(el)
@@ -752,6 +798,7 @@ class GT7Export(inkex.OutputExtension):
                     clip_count += self.resolve_clippath_for_shape(el)
                     filter_count += self.remove_filter_for_element(el)
                     mask_count += self.remove_mask_for_element(el)
+                    pattern_count += self.remove_pattern_for_element(el)
 
                 case "clippath":
                     clip_count += self.resolve_clippath_for_shape(el)
@@ -760,6 +807,7 @@ class GT7Export(inkex.OutputExtension):
                     # Filters/masks can appear on ANY element
                     filter_count += self.remove_filter_for_element(el)
                     mask_count += self.remove_mask_for_element(el)
+                    pattern_count += self.remove_pattern_for_element(el)
 
         if grad_count:
             self.log(logging.INFO, f"Normalized {grad_count} gradients")
@@ -772,6 +820,9 @@ class GT7Export(inkex.OutputExtension):
 
         if mask_count:
             self.log(logging.INFO, f"Removed {mask_count} masks")
+
+        if pattern_count:
+            self.log(logging.INFO, f"Replaced {pattern_count} patterns with solid fill color")
 
         self.log_defs()
 
@@ -2290,11 +2341,16 @@ class GT7Export(inkex.OutputExtension):
                 continue
 
             grad_id = val[5:-1]
-            self.log(logging.DEBUG, f"Shape {shape.get('id')} uses gradient {grad_id}")
+            self.log(logging.DEBUG, f"Shape {shape.get('id')} uses reference {grad_id}")
 
             grad = self.find_node(grad_id)
             if grad is None:
-                self.log(logging.DEBUG, f"  ERROR: gradient {grad_id} not found in SVG tree")
+                self.log(logging.DEBUG, f"Fill reference {grad_id} not found in SVG tree")
+                continue
+
+            tag = self.tag_name(grad)
+            if not tag in {"linearGradient", "radialGradient"}:
+                self.log(logging.DEBUG, f"No supported gradient type {tag}: id={grad_id}")
                 continue
 
             self.log(
@@ -2702,6 +2758,52 @@ class GT7Export(inkex.OutputExtension):
         node.attrib.pop("clip-path", None)
 
         return count + 1
+    
+# ---- Pattern ----
+
+    def pattern_mean_color(self, nodes):
+        """
+        Compute the mean RGB color of arbitrary SVG geometry.
+        Uses:
+        - rasterize_nodes(nodes)  → PNG bytes
+        - Pillow + NumPy          → mean color
+        Returns hex string "#RRGGBB".
+        """
+
+        # 1) Rasterize geometry into PNG bytes
+        png_bytes = self.rasterize_nodes(nodes)
+
+        # 2) Load PNG into Pillow
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        arr = np.array(img)
+
+        # 3) Extract channels
+        R = arr[:, :, 0].astype(np.float32)
+        G = arr[:, :, 1].astype(np.float32)
+        B = arr[:, :, 2].astype(np.float32)
+        A = arr[:, :, 3].astype(np.float32) / 255.0
+
+        # 4) Premultiply to handle transparency correctly
+        Rm = R * A
+        Gm = G * A
+        Bm = B * A
+
+        # 5) Mean alpha
+        meanA = np.mean(A)
+        if meanA == 0:
+            return "#000000"  # fully transparent → treat as black
+
+        # 6) Un‑premultiply
+        meanR = np.mean(Rm) / meanA
+        meanG = np.mean(Gm) / meanA
+        meanB = np.mean(Bm) / meanA
+
+        # 7) Clamp + convert to hex
+        meanR = int(max(0, min(255, meanR)))
+        meanG = int(max(0, min(255, meanG)))
+        meanB = int(max(0, min(255, meanB)))
+
+        return "#{:02X}{:02X}{:02X}".format(meanR, meanG, meanB)
 
 
 # ---- Inkscape Actions ----
@@ -2824,6 +2926,90 @@ class GT7Export(inkex.OutputExtension):
         new_path.set("d", union.get("d"))
         self.copy_presentation_attributes(union, new_path)
         return new_path
+
+    def compute_tile_size_from_nodes(self, nodes):
+        """
+        Compute width & height from the bounding box of the nodes.
+        This makes the rasterizer reusable for ANY geometry, not only patterns.
+        """
+
+        bbox = inkex.BoundingBox()
+        for node in nodes:
+            try:
+                bbox += node.bounding_box()
+            except Exception:
+                pass  # non-geometry nodes
+
+        width = bbox.width if bbox.width > 0 else 1.0
+        height = bbox.height if bbox.height > 0 else 1.0
+
+        return width, height
+
+
+    def build_svg_from_nodes(self, nodes):
+        """
+        Build a minimal standalone SVG document from inkex nodes.
+        Follows the same structure as your boolean-operation input builder.
+        """
+
+        width, height = self.compute_tile_size_from_nodes(nodes)
+
+        minimal_svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" '
+            f'width="{width}" height="{height}" '
+            f'viewBox="0 0 {width} {height}"></svg>'
+        )
+
+        doc = inkex.load_svg(minimal_svg)
+        root = doc.getroot()
+
+        for i, node in enumerate(nodes):
+            clone = node.copy()
+            clone.set("id", f"n{i}")
+            self.copy_presentation_attributes(node, clone)
+            root.append(clone)
+
+        return doc
+
+
+    def rasterize_nodes(self, nodes):
+        """
+        Rasterize a list of inkex nodes using Inkscape's renderer via inkex actions API.
+        Computes width & height automatically from node geometry.
+        Returns PNG bytes.
+        """
+
+        # 1) Build SVG input
+        doc = self.build_svg_from_nodes(nodes)
+        root = doc.getroot()
+        svg_input = inkex.etree.tostring(root, encoding="unicode")
+        self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
+
+        # 2) Create temp PNG filename
+        tmp_png = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        tmp_png_path = tmp_png.name
+        tmp_png.close()
+
+        # 3) Rasterize using Inkscape actions API
+        inkex.command.inkscape_command(
+            doc,
+            actions=[
+                {"action": "export-filename", "value": tmp_png_path},
+                {"action": "export-type", "value": "png"}
+            ]
+        )
+
+        self.log(logging.DEBUG, f"Rasterizer PNG path: {tmp_png_path}")
+
+        # 4) Read PNG bytes
+        with open(tmp_png_path, "rb") as f:
+            png_bytes = f.read()
+
+        os.remove(tmp_png_path)
+
+        self.log(logging.DEBUG,f"Read {png_bytes.__sizeof__()} bytes")
+
+        return png_bytes
 
 
 if __name__ == "__main__":
