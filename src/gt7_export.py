@@ -1555,71 +1555,74 @@ class GT7Export(inkex.OutputExtension):
             self.flatten_group(node)
 
     def group_by_common_presentation_attributes(self, node=None):
-            if node is None:
-                node = self.svg
+        if node is None:
+            node = self.svg
 
-            for child in list(node):
-                self.group_by_common_presentation_attributes(child)
+        for child in list(node):
+            self.group_by_common_presentation_attributes(child)
 
-            children = list(node)
-            if len(children) < 2:
-                return
+        children = list(node)
+        if len(children) < 2:
+            return
 
-            i = 0
-            while i < len(children):
-                base = children[i]
-                if not isinstance(base.tag, str):
-                    i += 1
-                    continue
+        i = 0
+        while i < len(children):
+            base = children[i]
+            if not isinstance(base.tag, str):
+                i += 1
+                continue
 
-                base_attrs = {
-                    k: v for k, v in base.attrib.items()
+            base_attrs = {
+                k: v for k, v in base.attrib.items()
+                if k in self.PRESENTATION_ATTRS
+            }
+            if not base_attrs:
+                i += 1
+                continue
+
+            run = [base]
+            j = i + 1
+            while j < len(children):
+                other = children[j]
+                if not isinstance(other.tag, str):
+                    break
+
+                other_attrs = {
+                    k: v for k, v in other.attrib.items()
                     if k in self.PRESENTATION_ATTRS
                 }
-                if not base_attrs:
-                    i += 1
-                    continue
 
-                run = [base]
-                j = i + 1
-                while j < len(children):
-                    other = children[j]
-                    if not isinstance(other.tag, str):
-                        break
+                if other_attrs != base_attrs:
+                    break
 
-                    other_attrs = {
-                        k: v for k, v in other.attrib.items()
-                        if k in self.PRESENTATION_ATTRS
-                    }
+                run.append(other)
+                j += 1
 
-                    if other_attrs != base_attrs:
-                        break
+            if len(run) < 2:
+                i += 1
+                continue
 
-                    run.append(other)
-                    j += 1
+            parent = node
+            wrapper = inkex.Group()
 
-                if len(run) < 2:
-                    i += 1
-                    continue
+            parent_index = parent.index(base)
+            self.add_node(wrapper, parent, parent_index)
 
-                parent = node
-                wrapper = inkex.Group()
+            for el in run:
+                parent.remove(el)
+                self.add_node(el, wrapper)
 
-                parent_index = parent.index(base)
-                self.add_node(wrapper, parent, parent_index)
+                for k in base_attrs.keys():
+                    el.attrib.pop(k, None)
 
-                for el in run:
-                    parent.remove(el)
-                    self.add_node(el, wrapper)
+            for k, v in base_attrs.items():
+                wrapper.set(k, v)
 
-                    for k in base_attrs.keys():
-                        el.attrib.pop(k, None)
+            children = list(node)
+            i = parent_index + 1
 
-                for k, v in base_attrs.items():
-                    wrapper.set(k, v)
-
-                children = list(node)
-                i = parent_index + 1
+        # remove redundant attributes from geometry nodes
+        self.remove_redundant_attributes()
 
     # endregion
 
@@ -1886,13 +1889,47 @@ class GT7Export(inkex.OutputExtension):
                 self.log(logging.DEBUG,f"Removed attribute {attr} from node {tag} id={id}")
                 node.attrib.pop(attr, None)
 
+    def remove_non_gt7_elements(self):
+        """
+        Remove editor-specific and unsafe elements/attributes:
+        - <script>
+        - Inkscape/Sodipodi elements
+        - Inkscape/Sodipodi attributes
+        """
+
+        # --- 1. Remove all <script> elements ---
+        for el in list(self.svg.iter()):
+            tag = self.tag_name(el)
+            if tag == "script":
+                parent = el.getparent()
+                if parent is not None:
+                    parent.remove(el)
+
+        # --- 2. Remove editor-specific elements (namespaced) ---
+        for el in list(self.svg.iter()):
+            tag = self.tag_name(el)
+            if tag.startswith("{http://www.inkscape.org/namespaces/inkscape}") or \
+            tag.startswith("{http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"):
+                parent = el.getparent()
+                if parent is not None:
+                    parent.remove(el)
+
+        # --- 3. Strip editor-specific attributes from remaining elements ---
+        for el in self.svg.iter():
+            attribs = list(el.attrib.items())
+            for name, _ in attribs:
+                if name.startswith("{http://www.inkscape.org/namespaces/inkscape}") or \
+                name.startswith("{http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"):
+                    del el.attrib[name]
+
 
     def compress_output(self):
         self.remove_comments()
         self.group_by_common_presentation_attributes()
         self.round_all_coordinates()
         self.remove_non_gt7_attributes()
-        self.remove_redundant_attributes()
+        self.remove_non_gt7_elements()
+        
         
         
         self.log(logging.INFO, f"Compressed output")
@@ -2046,6 +2083,7 @@ class GT7Export(inkex.OutputExtension):
 
         tokens = path.strip().split()
         pts = []
+        cx, cy = origin_x, origin_y  # current position
 
         i = 0
         while i < len(tokens):
@@ -2053,7 +2091,9 @@ class GT7Export(inkex.OutputExtension):
                 # c dx1,dy1 dx2,dy2 dx3,dy3
                 if i + 3 < len(tokens):
                     dx, dy = tokens[i+3].split(",")
-                    pts.append((origin_x + float(dx), origin_y + float(dy)))
+                    cx += float(dx)
+                    cy += float(dy)
+                    pts.append((cx, cy))
                     i += 4
                 else:
                     break
@@ -2061,6 +2101,7 @@ class GT7Export(inkex.OutputExtension):
                 i += 1
 
         return pts
+
 
     
     def make_stop(self, offset, rgb):
