@@ -21,22 +21,32 @@ from datetime import datetime
 import numpy as np
 from numpy import clip
 from PIL import Image
+import math
 
 LOG_LEVEL = logging.DEBUG
+
+# region log_args
 
 def log_args(func):
     func._log_args = True
     return func
 
+# endregion
+
+# region NullWriter
 class NullWriter:
     def write(self, *args, **kwargs):
         pass
     def flush(self):
         pass
 
+# endregion
+
 class GT7Export(inkex.OutputExtension):
     """Save As → GT7 SVG"""
     
+    # region constants
+
     STRIP_ALPHA_FROM_COLOR = True
 
     GT7_ATTRS = {
@@ -113,6 +123,10 @@ class GT7Export(inkex.OutputExtension):
 
     XLINK_NS = "http://www.w3.org/1999/xlink"
 
+    # endregion
+
+    # region --- inkex.OutputExtension interface ---
+
     @log_args
     def __init__(self):
         super().__init__()
@@ -161,33 +175,6 @@ class GT7Export(inkex.OutputExtension):
             self.file_handler = file_handler
 
         self.log(logging.INFO, f"Writing GT7 log to {self.log_path}")
-
-    def log_all_args(self, func_name, args, kwargs):
-        self.log(logging.DEBUG, f"args={args} kwargs={kwargs}", stacklevel=3)
-
-    def log(self, level, msg, stacklevel=2):
-        """
-        Unified logging wrapper:
-        - Python logging (with real caller info)
-        - inkex.utils.debug mirror
-        """
-
-        if level == logging.ERROR:
-            self.logger.error(msg, stacklevel=stacklevel)
-            self.msg(f"[ERROR] {msg}")
-            
-        elif level == logging.WARNING:
-            self.logger.error(msg, stacklevel=stacklevel)
-            self.msg(f"[WARNING] {msg}")
-
-        elif level == logging.INFO:
-            if self.logger.isEnabledFor(logging.INFO):
-                self.logger.info(msg, stacklevel=stacklevel)
-
-        elif level == logging.DEBUG:
-            if self.logger.isEnabledFor(logging.DEBUG):
-                self.logger.debug(msg, stacklevel=stacklevel)
-
 
     def add_arguments(self, pars):
         pass
@@ -253,9 +240,33 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.ERROR,traceback.format_exc())
             raise
 
-#--- NEW API ---
+    # endregion
 
-#--- DOM Tree and SVG Helpers ---
+    # region --- logging ---
+
+    def log(self, level, msg, stacklevel=2):
+        """
+        Unified logging wrapper:
+        - Python logging (with real caller info)
+        - inkex.utils.debug mirror
+        """
+
+        if level == logging.ERROR:
+            self.logger.error(msg, stacklevel=stacklevel)
+            self.msg(f"[ERROR] {msg}")
+            
+        elif level == logging.WARNING:
+            self.logger.error(msg, stacklevel=stacklevel)
+            self.msg(f"[WARNING] {msg}")
+
+        elif level == logging.INFO:
+            if self.logger.isEnabledFor(logging.INFO):
+                self.logger.info(msg, stacklevel=stacklevel)
+
+        elif level == logging.DEBUG:
+            if self.logger.isEnabledFor(logging.DEBUG):
+                self.logger.debug(msg, stacklevel=stacklevel)
+
 
     def log_svg(self, node=None, indent=0, header="SVG DOM"):
         """
@@ -285,6 +296,10 @@ class GT7Export(inkex.OutputExtension):
         if header:
             self.log(logging.DEBUG, f"-----------------------------------------------")
 
+
+    # endregion
+
+    # region --- DOM Tree and SVG Helpers ---
 
     def generate_id(self, el):
         """
@@ -465,9 +480,9 @@ class GT7Export(inkex.OutputExtension):
             "polygon"
         )
 
-        
-    #--- Transformation Helpers ---    
-        
+    # endregion
+     
+    # region --- Transformation Helpers ---        
         
     def use_transform(self, use_el):
         tx = self.parse_number(use_el.get("x"))
@@ -596,10 +611,9 @@ class GT7Export(inkex.OutputExtension):
         # Anything else → becomes a path
         return self.ellipse_to_path(node, transform=transform)
 
+    # endregion
 
-    
-#--- Resolve styles ---
-
+    # region --- Resolve Styles ---
 
     def resolve_styles_to_attributes(self):
         count = 0
@@ -622,8 +636,10 @@ class GT7Export(inkex.OutputExtension):
 
         if count:
             self.log(logging.INFO, f"Resolved {count} styles to attributes")
+
+    # endregion
             
-#--- Resolve References ---
+    # region --- Resolve References ---
 
     def remap_ids_in_clone(self, clone):
         old_to_new = {}
@@ -647,7 +663,6 @@ class GT7Export(inkex.OutputExtension):
                     ref_id = val[5:-1]
                     if ref_id in old_to_new:
                         el.set(attr, f"url(#{old_to_new[ref_id]})")
-            
 
 
     def expand_all_uses(self, node=None, visited=None):
@@ -850,10 +865,10 @@ class GT7Export(inkex.OutputExtension):
 
         self.log_defs()
 
-
+    # endregion
             
 
-#--- Viewbox Translation ---
+    # region --- Viewbox Translation ---
 
     def compute_viewbox_translation(self):
         root = self.svg
@@ -930,7 +945,9 @@ class GT7Export(inkex.OutputExtension):
         combined = t @ base
         grad.set("gradientTransform", str(combined))
 
-#--- Simplify Geometry ---
+    # endregion
+
+    # region --- Simplify Geometry ---
 
     
     def combine_paths(self, paths):
@@ -1604,7 +1621,9 @@ class GT7Export(inkex.OutputExtension):
                 children = list(node)
                 i = parent_index + 1
 
-#--- Cleanup <Defs> ----
+    # endregion
+
+    # region --- Cleanup SVG Tree ----
         
     def collect_referenced_ids(self):
         referenced = set()
@@ -1687,6 +1706,7 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.DEBUG, f"defs child: tag={tag} id={cid} attrib={dict(child.attrib)}")
         self.log(logging.DEBUG, "--- END DEFS ---")
 
+
     def remove_unreferenced_referenceables(self):
         referenced = self.collect_referenced_ids()
 
@@ -1721,9 +1741,6 @@ class GT7Export(inkex.OutputExtension):
                     parent.remove(el)
                     removed_any=True
 
-
-#--- Clean Attributes ---
-
     def clean_stroke_attributes(self):
         count = 0
 
@@ -1752,8 +1769,6 @@ class GT7Export(inkex.OutputExtension):
 
         if count:
             self.log(logging.INFO, f"Cleaned {count} invisible strokes")
-
-#--- Strip Output ---
 
     def round_all_coordinates(self, node=None):
         # Modern inkex root access
@@ -1872,8 +1887,6 @@ class GT7Export(inkex.OutputExtension):
                 node.attrib.pop(attr, None)
 
 
-
-
     def compress_output(self):
         self.remove_comments()
         self.group_by_common_presentation_attributes()
@@ -1884,7 +1897,296 @@ class GT7Export(inkex.OutputExtension):
         
         self.log(logging.INFO, f"Compressed output")
 
-##--- Resolving Gradients ---
+    # endregion
+
+    # region --- Resolving Gradients ---
+
+    import math
+
+    def pca_color_axis(self, colors):
+        """
+        colors: list of (r, g, b) floats in [0, 1]
+        returns: (min_color, max_color)
+        """
+
+        # --- Step 1: convert to float vectors ---
+        # colors is already [(r,g,b), ...] in your pipeline
+
+        # --- Step 2: compute mean ---
+        n = len(colors)
+        mean = [
+            sum(c[i] for c in colors) / n
+            for i in range(3)
+        ]
+
+        # --- Step 3: center colors ---
+        centered = [
+            (c[0] - mean[0], c[1] - mean[1], c[2] - mean[2])
+            for c in colors
+        ]
+
+        # --- Step 4: covariance matrix (3×3) ---
+        cov = [[0.0]*3 for _ in range(3)]
+        for cx, cy, cz in centered:
+            cov[0][0] += cx*cx
+            cov[0][1] += cx*cy
+            cov[0][2] += cx*cz
+            cov[1][0] += cy*cx
+            cov[1][1] += cy*cy
+            cov[1][2] += cy*cz
+            cov[2][0] += cz*cx
+            cov[2][1] += cz*cy
+            cov[2][2] += cz*cz
+
+        for i in range(3):
+            for j in range(3):
+                cov[i][j] /= (n - 1)
+
+        # --- Step 5: eigen decomposition (power iteration) ---
+        def power_iteration(matrix, iterations=50):
+            v = [1.0, 1.0, 1.0]  # initial vector
+            for _ in range(iterations):
+                # multiply matrix * v
+                mv = [
+                    matrix[0][0]*v[0] + matrix[0][1]*v[1] + matrix[0][2]*v[2],
+                    matrix[1][0]*v[0] + matrix[1][1]*v[1] + matrix[1][2]*v[2],
+                    matrix[2][0]*v[0] + matrix[2][1]*v[1] + matrix[2][2]*v[2],
+                ]
+                # normalize
+                norm = math.sqrt(mv[0]**2 + mv[1]**2 + mv[2]**2)
+                v = [mv[i]/norm for i in range(3)]
+            return v
+
+        axis = power_iteration(cov)
+
+        # --- Step 6: project colors onto axis ---
+        projections = []
+        for c in colors:
+            # dot product with axis
+            proj = c[0]*axis[0] + c[1]*axis[1] + c[2]*axis[2]
+            projections.append(proj)
+
+        # --- Step 7: find min/max projected colors ---
+        min_index = projections.index(min(projections))
+        max_index = projections.index(max(projections))
+
+        return colors[min_index], colors[max_index]
+
+    def parse_color_rgb(self, col):
+        # Accepts #RRGGBB or rgb(r,g,b)
+        col = col.strip()
+        if col.startswith("#"):
+            r = int(col[1:3], 16) / 255.0
+            g = int(col[3:5], 16) / 255.0
+            b = int(col[5:7], 16) / 255.0
+            return (r, g, b)
+        if col.startswith("rgb"):
+            nums = col[col.find("(")+1:col.find(")")].split(",")
+            r, g, b = [int(x)/255.0 for x in nums]
+            return (r, g, b)
+        return (0, 0, 0)
+
+    def rgb_to_hex(self, c):
+        r = int(c[0]*255) 
+        g = int(c[1]*255)
+        b = int(c[2]*255)
+        return f"#{r:02x}{g:02x}{b:02x}"
+    
+    def fit_line_least_squares(self, pts):
+        """
+        Fit a line through a list of (x,y) points using least squares.
+        Returns (x1, y1, x2, y2) = endpoints of the fitted line.
+        """
+
+        # Fallback if no geometry
+        if not pts:
+            return (0, 0, 1, 0)
+
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+
+        n = len(pts)
+        mean_x = sum(xs) / n
+        mean_y = sum(ys) / n
+
+        # slope a = Σ((x-mean_x)(y-mean_y)) / Σ((x-mean_x)^2)
+        num = sum((xs[i] - mean_x) * (ys[i] - mean_y) for i in range(n))
+        den = sum((xs[i] - mean_x)**2 for i in range(n))
+        a = num / den if den != 0 else 0.0
+        b = mean_y - a * mean_x
+
+        # projection helper
+        def project(px, py):
+            vx, vy = 1.0, a
+            norm2 = vx*vx + vy*vy
+            t = ((px - 0)*vx + (py - b)*vy) / norm2
+            x_proj = t * vx
+            y_proj = a * x_proj + b
+            return (x_proj, y_proj)
+
+        # project all points
+        projections = [project(px, py) for px, py in pts]
+
+        # find min/max along the fitted axis
+        x1, y1 = projections[0]
+        x2, y2 = projections[0]
+
+        for px, py in projections:
+            if px < x1:
+                x1, y1 = px, py
+            if px > x2:
+                x2, y2 = px, py
+
+        return (x1, y1, x2, y2)
+
+    def mesh_points(self, stop, origin_x, origin_y):
+        path = stop.get("path")
+        if not path:
+            return []
+
+        tokens = path.strip().split()
+        pts = []
+
+        i = 0
+        while i < len(tokens):
+            if tokens[i].lower() == "c":
+                # c dx1,dy1 dx2,dy2 dx3,dy3
+                if i + 3 < len(tokens):
+                    dx, dy = tokens[i+3].split(",")
+                    pts.append((origin_x + float(dx), origin_y + float(dy)))
+                    i += 4
+                else:
+                    break
+            else:
+                i += 1
+
+        return pts
+
+    
+    def make_stop(self, offset, rgb):
+        """
+        Create a <stop> element with GT7-safe attributes.
+        rgb is a tuple (r, g, b) in [0..1].
+        """
+        stop = inkex.elements.Stop()  # type: ignore
+        stop.set("offset", str(offset))
+        stop.set("stop-color", self.rgb_to_hex(rgb))
+        return stop
+
+    def resolve_mesh_gradient_chain(self, mg):
+        """
+        Resolve chained meshgradients:
+        - follow xlink:href chain
+        - inherit missing attributes
+        - inherit stops and coordinates
+        - return a flattened meshgradient clone
+        """
+
+        ns = {
+            "svg": "http://www.w3.org/2000/svg",
+            "xlink": "http://www.w3.org/1999/xlink"
+        }
+
+        # Clone starting gradient
+        merged = copy.deepcopy(mg)
+
+        # Walk chain upward
+        current = mg
+        while True:
+            href = current.get("{http://www.w3.org/1999/xlink}href")
+            if not href:
+                break
+
+            ref_id = href[1:]  # remove leading '#'
+            parent = self.svg.xpath(f"//svg:meshgradient[@id='{ref_id}']", namespaces=ns)
+            if not parent:
+                break
+            parent = parent[0]
+
+            # --- inherit attributes ---
+            for attr, val in parent.attrib.items():
+                if attr not in merged.attrib:
+                    merged.set(attr, val)
+
+            # --- inherit stops ---
+            parent_stops = parent.xpath(".//svg:stop", namespaces=ns)
+            merged_stops = merged.xpath(".//svg:stop", namespaces=ns)
+
+            if not merged_stops:
+                # child has no stops → inherit all
+                for s in parent_stops:
+                    merged.append(copy.deepcopy(s))
+
+            # continue walking up
+            current = parent
+
+        return merged
+
+
+    def replace_mesh_gradient(self, mg):
+        ns = {"svg": "http://www.w3.org/2000/svg"}
+
+        tag = self.tag_name(mg)
+        id = mg.get("id")
+
+        self.log(logging.WARNING,f"Replacing {tag} id={id} with linearGradient")
+
+        # --- Step 0: resolve chained attributes ---
+        mg = self.resolve_mesh_gradient_chain(mg)
+        
+        # --- Step 1: collect stop colors + positions ---
+        colors = []
+        pts = []
+
+        origin_x = float(mg.get("x", 0))
+        origin_y = float(mg.get("y", 0))
+
+        for stop in mg.xpath(".//svg:stop", namespaces=ns):
+            
+            points = self.mesh_points(stop, origin_x, origin_y)
+            pts.extend(points)
+
+            col = stop.get("stop-color")
+            if col:
+                colors.append(self.parse_color_rgb(col))
+
+        if not colors:
+            colors = [(0,0,0), (1,1,1)]
+        if not pts:
+            pts = [(0,0), (1,0)]
+
+        # --- Step 2: PCA dominant color axis ---
+        c_min, c_max = self.pca_color_axis(colors)
+
+        # --- Step 3: least-squares axis ---
+        x1, y1, x2, y2 = self.fit_line_least_squares(pts)
+
+        # --- Step 4: remove original meshgradient ---
+        gradientUnits = mg.get("gradientUnits")
+        transform = mg.get("gradientTransform")
+
+        # --- Step 5: create new linearGradient ---
+        lg = inkex.elements.LinearGradient()  # type: ignore
+        lg.set("x1", str(x1))
+        lg.set("y1", str(y1))
+        lg.set("x2", str(x2))
+        lg.set("y2", str(y2))
+
+        if gradientUnits is not None:
+            lg.set("gradientUnits", gradientUnits)
+
+        if transform is not None:
+            lg.set("gradientTransform", transform)
+
+        # --- Step 6: add stops ---
+        lg.add(self.make_stop(0, c_min))
+        lg.add(self.make_stop(1, c_max))
+
+        lg.attrib.pop("id", None)
+
+        return lg
+
+
 
     def ensure_defs(self):
         root = self.svg
@@ -2103,6 +2405,8 @@ class GT7Export(inkex.OutputExtension):
             new_grad = inkex.elements.LinearGradient() # type: ignore
         elif tag == "radialGradient":
             new_grad = inkex.elements.RadialGradient() # type: ignore
+        elif tag == "meshgradient":
+            return self.replace_mesh_gradient(grad)
         else:
             # Fallback: generic element with same tag + same nsmap
             new_grad = inkex.etree.Element(grad.tag, nsmap=grad.nsmap)
@@ -2293,12 +2597,13 @@ class GT7Export(inkex.OutputExtension):
 
             grad = self.find_node(grad_id)
             if grad is None:
-                self.log(logging.DEBUG, f"Fill reference {grad_id} not found in SVG tree")
+                self.log(logging.WARNING, f"Fill reference {grad_id} not found in SVG tree")
                 continue
 
             tag = self.tag_name(grad)
-            if not tag in {"linearGradient", "radialGradient"}:
-                self.log(logging.DEBUG, f"No supported gradient type {tag}: id={grad_id}")
+            
+            if not tag in {"linearGradient", "radialGradient", "meshgradient"}:
+                self.log(logging.DEBUG, f"Gradient {tag}: id={grad_id} not supported")
                 continue
 
             self.log(
@@ -2506,7 +2811,9 @@ class GT7Export(inkex.OutputExtension):
             f"x2={grad.get('x2')} y2={grad.get('y2')}"
         )
 
-#--- clipping ---
+    # endregion
+
+    # region --- clipping ---
     
 
     def resolve_clippath(self, cp, transform = Transform()):
@@ -2707,7 +3014,9 @@ class GT7Export(inkex.OutputExtension):
 
         return count + 1
     
-# ---- Pattern ----
+    # endregion
+    
+    # region ---- Remove Pattern ----
 
     def pattern_mean_color(self, nodes):
         """
@@ -2752,9 +3061,11 @@ class GT7Export(inkex.OutputExtension):
         meanB = int(max(0, min(255, meanB)))
 
         return "#{:02X}{:02X}{:02X}".format(meanR, meanG, meanB)
+    
+    # endregion
 
 
-# ---- Inkscape Actions ----
+    # region ---- Inkscape Actions ----
 
     def path_intersection(self, pathA, pathB):
             # Build minimal SVG
@@ -2958,7 +3269,12 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.DEBUG,f"Read {len(png_bytes)} bytes")
 
             return png_bytes
+    
+    # endregion
 
+# region --- Main ---
 
 if __name__ == "__main__":
     GT7Export().run()
+
+# endregion
