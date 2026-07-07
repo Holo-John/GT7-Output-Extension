@@ -1,0 +1,43 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Top-left small triangle -->
+  <polygon
+    points="138.756565,-31.081861 113.543165,23.262639 88.329765,-31.081861"
+    fill="#df00df"/>
+
+  <!-- Top-right small triangle -->
+  <polygon
+    points="113.543165,23.262639 88.329765,77.607139 88.329765,-31.081861"
+    fill="#9f009f"/>
+
+  <!-- Right-upper small triangle -->
+  <polygon
+    points="88.329765,77.607139 63.116365,23.262639 88.329765,-31.081861"
+    fill="#9f009f"/>
+
+  <!-- Right-lower small triangle -->
+  <polygon
+    points="63.116365,23.262639 37.902965,-31.081861 88.329765,-31.081861"
+    fill="#df00df"/>
+
+  <!-- Bottom-right small triangle -->
+  <polygon
+    points="37.902965,-31.081861 63.116365,-85.426361 88.329765,-31.081861"
+    fill="#df00df"/>
+
+  <!-- Bottom-left small triangle -->
+  <polygon
+    points="63.116365,-85.426361 88.329765,-139.770861 88.329765,-31.081861"
+    fill="#9f009f"/>
+
+  <!-- Left-lower small triangle -->
+  <polygon
+    points="88.329765,-139.770861 113.543165,-85.426361 88.329765,-31.081861"
+    fill="#9f009f"/>
+
+  <!-- Left-upper small triangle -->
+  <polygon
+    points="113.543165,-85.426361 138.756565,-31.081861 88.329765,-31.081861"
+    fill="#df00df"/>
+
+</svg>

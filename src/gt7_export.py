@@ -325,12 +325,33 @@ class GT7Export(inkex.OutputExtension):
         el.set("id", candidate)
         return candidate
 
-    
-    def href_target(self, el):
-        href = el.get("href") or el.get(f"{{{self.XLINK_NS}}}href")
-        if not href or not href.startswith("#"):
+    def url_to_id(self, url):
+        if not url:
             return None
-        return self.find_node(href[1:])
+
+        url = url.strip()
+
+        # Case 1: url(#foo)
+        if url.startswith("url(") and url.endswith(")"):
+            inside = url[4:-1].strip()   # → "#foo"
+            if inside.startswith("#"):
+                return inside[1:]        # → "foo"
+            return inside                # fallback
+
+        # Case 2: #foo
+        if url.startswith("#"):
+            return url[1:]
+
+        # Case 3: plain "foo" (not valid for markers, but safe fallback)
+        return url
+
+    
+    def ref_target(self, el, attr="href"):
+        href = el.get(attr) or el.get(f"{{{self.XLINK_NS}}}{attr}")
+        id = self.url_to_id(href)
+        if id is None:
+            return None, None
+        return self.find_node(id), id
 
     def parent_of(self, child):
         parent = child.getparent()
@@ -690,7 +711,7 @@ class GT7Export(inkex.OutputExtension):
             return
 
         # Resolve reference
-        ref = self.href_target(node)
+        ref, ref_id = self.ref_target(node)
         if ref is None or not self.is_expandable_ref(ref):
             # Remove useless <use>
             parent, _ = self.parent_of(node)
@@ -698,7 +719,6 @@ class GT7Export(inkex.OutputExtension):
             return
 
         # Cycle detection
-        ref_id = ref.get("id")
         if ref_id and ref_id in visited:
             # Remove cyclic <use>
             parent, _ = self.parent_of(node)
@@ -784,15 +804,8 @@ class GT7Export(inkex.OutputExtension):
         Returns number of patterns removed (0 or 1).
         """
 
-        fill = el.get("fill")
-        if not fill or not fill.startswith("url(#"):
-            return 0
-
-        # Extract ID from url(#ID)
-        ref_id = fill[5:-1]
-
         # Resolve referenced element
-        ref = self.find_node(ref_id)
+        ref, ref_id = self.ref_target(el, "fill")
         if ref is None:
             return 0
 
@@ -819,6 +832,47 @@ class GT7Export(inkex.OutputExtension):
 
         return 1
 
+    #def resolve_marker_for_element(self, el):
+    #    markers = {
+    #        "start": el.get("marker-start"),
+    #        "mid":   el.get("marker-mid"),
+    #        "end":   el.get("marker-end")
+    #    }
+
+    #    if not any(markers.values()):
+    #        return 0
+
+    #    count = 0
+
+        # Extract path geometry
+    #    pts = self.extract_vertices(el)
+
+    #    for pos, marker_url in markers.items():
+    #        if not marker_url:
+    #            continue
+
+    #        marker_id = self.url_to_id(marker_url)
+    #        marker = self.find_node(marker_id)
+    #        if marker is None:
+    #            continue
+
+            # Determine which vertices to use
+    #        if pos == "start":
+    #            indices = [0]
+    #        elif pos == "end":
+    #            indices = [len(pts)-1]
+    #        else:  # mid
+    #            indices = range(1, len(pts)-1)
+
+    #        for idx in indices:
+    #            self.expand_marker_instance(el, marker, pts[idx], idx)
+    #            count += 1
+
+        # Remove marker attributes
+    #    for attr in ("marker-start", "marker-mid", "marker-end"):
+    #        el.attrib.pop(attr, None)
+
+    #    return count
 
 
     def resolve_references(self):
@@ -1641,17 +1695,10 @@ class GT7Export(inkex.OutputExtension):
         for el in self.svg.xpath(".//*[@*]"):
             # Direct attributes
             for attr in REF_ATTRS:
-                val = el.get(attr)
-                if not val:
-                    continue
-
-                # url(#id)
-                if val.startswith("url(#") and val.endswith(")"):
-                    referenced.add(val[5:-1])
-
-                # href="#id"
-                if val.startswith("#"):
-                    referenced.add(val[1:])
+                ref, ref_id = self.ref_target(el, attr)
+                
+                if not ref is None:
+                    referenced.add(ref_id)
 
             # Style attribute
             style = el.get("style")
@@ -2134,14 +2181,14 @@ class GT7Export(inkex.OutputExtension):
         # Walk chain upward
         current = mg
         while True:
-            href = current.get("{http://www.w3.org/1999/xlink}href")
-            if not href:
+            href, ref_id = self.ref_target(current)
+            if href is None:
                 break
 
-            ref_id = href[1:]  # remove leading '#'
-            parent = self.svg.xpath(f"//svg:meshgradient[@id='{ref_id}']", namespaces=ns)
-            if not parent:
+            parent = self.find_node(ref_id)
+            if parent is None:
                 break
+
             parent = parent[0]
 
             # --- inherit attributes ---
@@ -2548,15 +2595,10 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.DEBUG, f"[CHAIN] Child gradient id={grad.get('id')}")
 
             # Follow href chain (both plain and xlink)
-            href = g.get("href") or g.get(f"{{{self.XLINK_NS}}}href")
-            if not href or not href.startswith("#"):
-                self.log(logging.DEBUG, "    No href → chain ends here")
-                break
-
-            ref_id = href[1:]
+            ref, ref_id = self.ref_target(g)
+            
             self.log(logging.DEBUG, f"[CHAIN] Child href → {ref_id}")
 
-            ref = self.find_node(ref_id)
             if ref is None:
                 self.log(logging.DEBUG, f"ERROR: referenced gradient {ref_id} not found")
                 break
@@ -2629,11 +2671,8 @@ class GT7Export(inkex.OutputExtension):
         svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
 
         for attr in ("fill", "stroke"):
-            val = shape.get(attr)
-            if not val or not val.startswith("url(#"):
-                continue
-
-            grad_id = val[5:-1]
+            grad, grad_id = self.ref_target(shape, attr)
+            
             self.log(logging.DEBUG, f"Shape {shape.get('id')} uses reference {grad_id}")
 
             grad = self.find_node(grad_id)
@@ -2734,8 +2773,6 @@ class GT7Export(inkex.OutputExtension):
             max_y = max(ys)
 
             return min_x, min_y, max_x - min_x, max_y - min_y
-
-
 
         pts = []
 
@@ -2875,7 +2912,7 @@ class GT7Export(inkex.OutputExtension):
         geom = self.path_union(parts)
 
         # handle href / xlink:href on <clipPath> itself
-        ref = self.href_target(cp)
+        ref, ref_id = self.ref_target(cp)
         if ref is not None:
             ref_geom = self.resolve_clippath(ref, transform)
             geom = self.path_intersection(geom, ref_geom)
@@ -2887,7 +2924,6 @@ class GT7Export(inkex.OutputExtension):
     def resolve_clippath_geometry(self, node, M):
         self.log(logging.DEBUG, f"[CP]   resolve_clippath_geometry id={node.get('id')} tag={self.tag_name(node)} M={M}")
         self.log(logging.DEBUG, f"[CP]   is_geometry={self.is_geometry(node, gt7_supported=True)} clip-path={node.get('clip-path')}")
-
 
         # accumulate transform
         if node.get("transform"):
@@ -2923,27 +2959,20 @@ class GT7Export(inkex.OutputExtension):
         """
 
         # 1. Extract clip-path reference
-        cp_ref = el.get("clip-path")
-        if not cp_ref:
-            return None
+        cp, cp_id = self.ref_target(el, "clip-path")
 
-        # clip-path="url(#id)"
-        if cp_ref.startswith("url("):
-            cp_id = cp_ref[5:-1]  # strip url(# and )
-        else:
-            cp_id = cp_ref
-
-        # 2. Find the referenced node
-        cp = self.find_node(cp_id)
         if cp is None:
             return None
+        
+        #TODO - search for nested clipPath here!!!
 
+        #TODO Why is this needed - clipPath chain needs to be resolved properly!
         # 3. Follow href chains inside <clipPath>
-        while True:
-            href_target = self.href_target(cp)
-            if href_target is None:
-                break
-            cp = href_target
+        #while True:
+        #    href_target, href_id = self.ref_target(cp)
+        #    if href_target is None:
+        #        break
+        #    cp = href_target
 
         return cp
 

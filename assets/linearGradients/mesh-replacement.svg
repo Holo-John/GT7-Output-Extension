@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Linear-gradient approximation of original meshgradient1
+     Original mesh:
+     <meshgradient id="meshgradient1" gradientUnits="userSpaceOnUse" x="88.329765" y="-31.081861">
+-->
+
+<svg
+   width="143.85278mm"
+   height="146.1347mm"
+   viewBox="0 0 143.85278 146.1347"
+   version="1.1"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+
+  <defs>
+    <!-- Patch 1: quadrilateral, white → purple along P1→P2 -->
+    <linearGradient
+       id="lg_patch1"
+       gradientUnits="userSpaceOnUse"
+       x1="138.756565" y1="-31.081861"
+       x2="88.329765"  y2="77.607139">
+      <stop offset="0"   stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="1"   stop-color="#800080" stop-opacity="1"/>
+    </linearGradient>
+
+    <!-- Patch 2: triangle, white → purple along P2'→P3' -->
+    <linearGradient
+       id="lg_patch2"
+       gradientUnits="userSpaceOnUse"
+       x1="88.329765"  y1="77.607139"
+       x2="37.902965"  y2="-31.081861">
+      <stop offset="0"   stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="1"   stop-color="#800080" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Patch 1 geometry:
+       P1 = (138.756565, -31.081861)
+       P2 = (88.329765,   77.607139)
+       P3 = (37.902965,  -31.081861)
+       P4 = (88.329765, -139.770861)
+  -->
+  <polygon
+     id="patch1"
+     points="
+       138.756565,-31.081861
+       88.329765,77.607139
+       37.902965,-31.081861
+       88.329765,-139.770861"
+     fill="url(#lg_patch1)"
+     stroke="none"/>
+
+  <!-- Patch 2 geometry (triangle):
+       P1' = (138.756565, -31.081861)
+       P2' = (88.329765,   77.607139)
+       P3' = (37.902965,  -31.081861)
+  -->
+  <polygon
+     id="patch2"
+     points="
+       138.756565,-31.081861
+       88.329765,77.607139
+       37.902965,-31.081861"
+     fill="url(#lg_patch2)"
+     stroke="none"/>
+
+</svg>

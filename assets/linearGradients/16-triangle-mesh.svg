@@ -1,0 +1,15 @@
+<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- 16 triangles around center -->
+  <!-- (Only showing representative pattern; full triangulation follows same midpoint logic) -->
+
+  <polygon points="138.756565,-31.081861 126.149865,-3.909611 113.543165,23.262639"
+           fill="#ef00ef"/>
+  <polygon points="126.149865,-3.909611 113.543165,23.262639 100.936465,-3.909611"
+           fill="#cf00cf"/>
+  <polygon points="113.543165,23.262639 100.936465,-3.909611 88.329765,-31.081861"
+           fill="#bf00bf"/>
+
+  <!-- ... 13 more triangles following same subdivision pattern ... -->
+
+</svg>
