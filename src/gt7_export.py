@@ -2564,12 +2564,6 @@ class GT7Export(inkex.OutputExtension):
         gid = grad.get("id", "")
         self.log(logging.DEBUG, f"Resolving chain for gradient clone (temp id={gid})")
 
-        # --- SPEC RULE 1: detect child transform ---
-        child_gt = grad.get("gradientTransform")
-        child_has_gt = bool(child_gt)
-
-        inherited_gt = None
-
         # SVG namespace for stop lookup
         svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
 
@@ -2583,13 +2577,6 @@ class GT7Export(inkex.OutputExtension):
                 break
             if gid:
                 seen.add(gid)
-
-            # --- SPEC RULE 2: inherit only if child has NO gradientTransform ---
-            if not child_has_gt:
-                gt = g.get("gradientTransform")
-                if gt and inherited_gt is None:
-                    self.log(logging.DEBUG, f"Inheriting parent gradientTransform: {gt}")
-                    inherited_gt = gt
 
             # Debug: child/parent chain
             self.log(logging.DEBUG, f"[CHAIN] Child gradient id={grad.get('id')}")
@@ -2605,9 +2592,9 @@ class GT7Export(inkex.OutputExtension):
 
             self.log(logging.DEBUG, f"[CHAIN] Parent gradient found: id={ref.get('id')}")
 
-            # Inherit attributes (but NEVER inherit gradientTransform or href/id)
+            # Inherit attributes
             for attr, val in ref.attrib.items():
-                if attr in ("id", "href", f"{{{self.XLINK_NS}}}href", "gradientTransform"):
+                if attr in ("id", "gradientTransform"):
                     continue
                 if attr not in grad.attrib:
                     grad.set(attr, val)
@@ -2630,20 +2617,13 @@ class GT7Export(inkex.OutputExtension):
             g = ref
 
         # --- SPEC RULE 3: choose final transform ---
-        if child_has_gt:
-            # Child overrides everything
-            self.log(logging.DEBUG, f"  Child gradientTransform overrides parents: {child_gt}")
-            T_chain = Transform(child_gt)
-
-        elif inherited_gt:
-            # Child has none → inherit first parent transform
-            self.log(logging.DEBUG, f"  Using inherited parent gradientTransform: {inherited_gt}")
-            T_chain = Transform(inherited_gt)
-
-        else:
-            # No transform anywhere → identity
+        gt = grad.attrib.get("gradientTransform", None)
+        if gt is None:
             self.log(logging.DEBUG, "  No gradientTransform found → identity")
             T_chain = Transform()
+        else:
+            self.log(logging.DEBUG, f"  Resolved gradientTransform found → {gt}")
+            T_chain = Transform(gt)
 
         # Remove gradientTransform from the clone (baked into coords later)
         grad.attrib.pop("gradientTransform", None)
@@ -2673,11 +2653,11 @@ class GT7Export(inkex.OutputExtension):
         for attr in ("fill", "stroke"):
             grad, grad_id = self.ref_target(shape, attr)
             
-            self.log(logging.DEBUG, f"Shape {shape.get('id')} uses reference {grad_id}")
+            self.log(logging.DEBUG, f"Shape {self.tag_name(shape)} id={shape.get('id')}, {attr}={grad_id}")
 
             grad = self.find_node(grad_id)
             if grad is None:
-                self.log(logging.WARNING, f"Fill reference {grad_id} not found in SVG tree")
+                self.log(logging.DEBUG, f"{attr} reference {grad_id} not found in SVG tree")
                 continue
 
             tag = self.tag_name(grad)
