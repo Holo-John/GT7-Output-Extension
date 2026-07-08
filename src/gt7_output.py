@@ -830,35 +830,76 @@ class GT7Output(inkex.OutputExtension):
 
         if tag.endswith("path"):
             path = el.path.to_absolute()
-            coords = []
+            prev_x = prev_y = None
+            dx_prev = dy_prev = None
 
-            # Collect endpoints first
             for cmd in path:
+                letter = cmd.letter.upper()
+
+                # Determine endpoint
                 if hasattr(cmd, "end"):
                     x, y = cmd.end
                 elif hasattr(cmd, "args") and len(cmd.args) >= 2:
                     x, y = cmd.args[-2:]
                 else:
                     continue
-                coords.append((x, y))
 
-            # Now compute angles
-            for i, (x, y) in enumerate(coords):
-                if i == 0 and len(coords) > 1:
-                    # forward difference for first vertex
-                    nx, ny = coords[1]
-                    dx = nx - x
-                    dy = ny - y
+                # Compute tangent direction
+                if letter == "C":
+                    # args: x1,y1, x2,y2, x,y
+                    x1, y1, x2, y2, x3, y3 = cmd.args
+                    dx, dy = x3 - x2, y3 - y2
+
+                elif letter == "S":
+                    # args: x2,y2, x,y
+                    x2, y2, x3, y3 = cmd.args
+                    dx, dy = x3 - x2, y3 - y2
+
+                elif letter == "Q":
+                    # args: x1,y1, x,y
+                    x1, y1, x2, y2 = cmd.args
+                    dx, dy = x2 - x1, y2 - y1
+
+                elif letter == "T":
+                    if prev_x is not None:
+                        dx, dy = x - prev_x, y - prev_y
+                    else:
+                        dx = dy = 0
+
+                elif letter in ("L", "H", "V"):
+                    if prev_x is not None:
+                        dx, dy = x - prev_x, y - prev_y
+                    else:
+                        dx = dy = 0
+
                 else:
-                    # backward difference for others
-                    px, py = coords[i - 1] if i > 0 else (x, y)
-                    dx = x - px
-                    dy = y - py
+                    dx = dy = 0
 
-                angle = math.degrees(math.atan2(dy, dx)) if (dx or dy) else 0.0
+                # Normalize tangent vector
+                if dx or dy:
+                    length = math.hypot(dx, dy)
+                    dx /= length
+                    dy /= length
+                    angle = math.degrees(math.atan2(dy, dx))
+                else:
+                    angle = 0.0
+
+                # Ensure continuity (avoid 90°/180° flips)
+                if dx_prev is not None and dy_prev is not None:
+                    dot = dx_prev * dx + dy_prev * dy
+                    if dot < 0:  # tangent reversed
+                        angle = (angle + 180) % 360 - 180
+
+                # Normalize angle to (-180°, 180°)
+                angle = (angle + 180) % 360 - 180
+
                 pts.append((x, y, angle))
+                prev_x, prev_y = x, y
+                dx_prev, dy_prev = dx, dy
 
         return pts
+
+
 
 
     def resolve_marker_geometry(self, marker, el):
@@ -1071,25 +1112,22 @@ class GT7Output(inkex.OutputExtension):
         for el in list(self.svg.iter()):
             tag = self.tag_name(el)
 
-            for el in list(self.svg.iter()):
-                tag = self.tag_name(el)
+            match tag:
+                case "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon":
+                    grad_count += self.resolve_gradient_for_shape(el)
+                    clip_count += self.resolve_clippath_for_shape(el)
+                    filter_count += self.remove_filter_for_element(el)
+                    mask_count += self.remove_mask_for_element(el)
+                    pattern_count += self.remove_pattern_for_element(el)
+                    marker_count += self.resolve_marker_for_element(el)
 
-                match tag:
-                    case "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon":
-                        grad_count += self.resolve_gradient_for_shape(el)
-                        clip_count += self.resolve_clippath_for_shape(el)
-                        filter_count += self.remove_filter_for_element(el)
-                        mask_count += self.remove_mask_for_element(el)
-                        pattern_count += self.remove_pattern_for_element(el)
-                        marker_count += self.resolve_marker_for_element(el)
+                case "clippath":
+                    clip_count += self.resolve_clippath_for_shape(el)
 
-                    case "clippath":
-                        clip_count += self.resolve_clippath_for_shape(el)
-
-                    case _:
-                        filter_count += self.remove_filter_for_element(el)
-                        mask_count += self.remove_mask_for_element(el)
-                        pattern_count += self.remove_pattern_for_element(el)
+                case _:
+                    filter_count += self.remove_filter_for_element(el)
+                    mask_count += self.remove_mask_for_element(el)
+                    pattern_count += self.remove_pattern_for_element(el)
 
 
         if grad_count:
