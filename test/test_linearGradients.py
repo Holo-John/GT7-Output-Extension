@@ -10,7 +10,7 @@ from InkscapeHarness import (
     save_diff_image,
     assert_gt7_compliant_file
 )
-from src.gt7_export import GT7Export
+from gt7_output import GT7Output
 
 
 GRADIENT_SUITE = pathlib.Path("assets/linearGradients")
@@ -34,7 +34,7 @@ def test_linearGradients_case(case_name, svg_path):
     diff_png    = pathlib.Path(tmpdir) / "diff.png"
 
     # Run GT7 exporter
-    result = run_extension_on_svg(GT7Export, svg_path)
+    result = run_extension_on_svg(GT7Output, svg_path)
     actual_svg.write_text(result, encoding="utf-8")
 
     # Render expected + actual

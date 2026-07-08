@@ -21,7 +21,7 @@ try:
 except Exception:
     pass
 
-def run_extension_on_svg(extension_class, svg_path):
+def run_extension_on_svg(extension_class, svg_path, strip_alpha=False, rounding_precision=3, mesh_divisions=2, compress_output=False):
     """
     Loads an SVG file, runs an OutputExtension, and returns the output SVG as a string.
     """
@@ -31,6 +31,15 @@ def run_extension_on_svg(extension_class, svg_path):
 
     # 2. Create extension instance
     ext = extension_class()
+
+    #3. Set options
+    test_args = [
+        "--strip_alpha", f"{strip_alpha}",
+        "--rounding_precision", f"{rounding_precision}",
+        "--mesh_divisions", f"{mesh_divisions}",
+        "--compress_output", f"{compress_output}"
+    ]
+    ext.parse_arguments(test_args)
 
     # 3. Attach document + root
     ext.document = doc

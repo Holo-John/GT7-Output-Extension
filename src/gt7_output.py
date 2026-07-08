@@ -42,15 +42,10 @@ class NullWriter:
 
 # endregion
 
-class GT7Export(inkex.OutputExtension):
+class GT7Output(inkex.OutputExtension):
     """Save As → GT7 SVG"""
     
     # region constants
-
-    STRIP_ALPHA_FROM_GRADIENTS = True
-    COORDINATE_ROUNDING_PRECISION = 3
-    GRADIENT_MESH_PATCH_DIVISIONS = 2
-    COMPRESS_OUTPUT = False
 
     GT7_ATTRS = {
         "id",
@@ -180,14 +175,17 @@ class GT7Export(inkex.OutputExtension):
         self.log(logging.INFO, f"Writing GT7 log to {self.log_path}")
 
     def add_arguments(self, pars):
-        pass
+        pars.add_argument("--strip_alpha", type=inkex.Boolean, default=True) # type: ignore
+        pars.add_argument("--rounding_precision", type=int, default=3)
+        pars.add_argument("--mesh_divisions", type=int, default=2)
+        pars.add_argument("--compress_output", type=inkex.Boolean, default=False) # type: ignore
+
         
     def effect(self):
         pass
 
     def save(self, stream):
         try:
-            
             self.create_changelog(stream)
         
             self.log(logging.INFO, f"Started @ {datetime.now().isoformat()}")
@@ -242,6 +240,20 @@ class GT7Export(inkex.OutputExtension):
             self.log(logging.ERROR,str(e))
             self.log(logging.ERROR,traceback.format_exc())
             raise
+
+    def option(self, name):
+        # Ensure defaults exist when running outside Inkscape
+        if not self.options is None and hasattr(self.options,name):
+            return getattr(self.options,name)
+
+        match name:
+            case "strip_alpha": return True
+            case "rounding_precision": return 3
+            case "mesh_divisions": return 2
+            case "compress_output": return False
+            case _: 
+                self.log(logging.WARNING, f"Argument --{name} not set")
+                return None
 
     # endregion
 
@@ -1843,7 +1855,7 @@ class GT7Export(inkex.OutputExtension):
             "fx", "fy",                      # radial gradients
         )
 
-        digits = self.COORDINATE_ROUNDING_PRECISION
+        digits = self.options.rounding_precision
 
         for el in node.iter():
 
@@ -2333,7 +2345,7 @@ class GT7Export(inkex.OutputExtension):
 
     def strip_alpha_from_color(self, stop):
         # Global toggle
-        if not self.STRIP_ALPHA_FROM_GRADIENTS:
+        if not self.options.strip_alpha:
             return
 
         # Remove stop-opacity entirely
@@ -2404,7 +2416,7 @@ class GT7Export(inkex.OutputExtension):
         gid = grad.get("id", "")
         self.log(logging.DEBUG,
                  f"Normalized gradient stops for id={gid} "
-                 f"(first+last only, alpha stripped={self.STRIP_ALPHA_FROM_GRADIENTS})")
+                 f"(first+last only, alpha stripped={self.options.strip_alpha})")
 
     def normalize_gradient_units(self, grad, shape):
         """
@@ -3306,6 +3318,6 @@ class GT7Export(inkex.OutputExtension):
 # region --- Main ---
 
 if __name__ == "__main__":
-    GT7Export().run()
+    GT7Output().run()
 
 # endregion

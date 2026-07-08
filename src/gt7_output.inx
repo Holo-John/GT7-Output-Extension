@@ -1,0 +1,23 @@
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  <name>GT7 Output</name>
+  <id>gt7.output.output</id>
+
+  <output class="GT7Output" saveas="True">
+    <extension>.gt7</extension>
+    <mimetype>image/svg+xml</mimetype>
+    <filetypename>Gran Turismo 7 (*.gt7)</filetypename>
+    <filetypetooltip>SVG export optimized for Gran Turismo 7 Livery Editor</filetypetooltip>
+  </output>
+
+  <param name="strip_alpha" type="boolean" gui-text="Strip alpha from gradients">true</param>
+
+  <param name="rounding_precision" type="int" gui-text="Coordinate rounding (decimal places))">3</param>
+
+  <param name="mesh_divisions" type="int" gui-text="Gradient mesh subdivision count">2</param>
+
+  <param name="compress_output" type="boolean" gui-text="Compress exported GT7 file">false</param>
+
+  <script>
+    <command interpreter="python" location="inx">gt7_output.py</command>
+  </script>
+</inkscape-extension>
