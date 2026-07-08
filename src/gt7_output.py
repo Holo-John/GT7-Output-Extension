@@ -79,7 +79,9 @@ class GT7Output(inkex.OutputExtension):
         "stroke-linecap", "stroke-linejoin", "stroke-miterlimit",
         "opacity", "clip-path", "mask", "filter", "fill-rule",
         "stop-color", "stop-opacity",
+        "marker-start", "marker-mid", "marker-end",
     }
+
 
 
     PAINT_SERVER_TAGS = {
@@ -787,6 +789,237 @@ class GT7Output(inkex.OutputExtension):
         # Remove original <use>
         self.remove_node(node, parent)
 
+    # region --- Marker ---
+
+    def remove_pattern_for_element(self, el):
+        """
+        Replace pattern fill with mean color and remove the pattern reference.
+        Returns number of patterns removed (0 or 1).
+        """
+
+        # Resolve referenced element
+        ref, ref_id = self.ref_target(el, "fill")
+        if ref is None:
+            return 0
+
+        # Only handle <pattern>, ignore other references
+        tag = self.tag_name(ref)
+        if tag != "pattern":
+            return 0
+
+        # Collect geometry nodes inside the pattern
+        nodes = list(ref.iterchildren())
+
+        # Compute mean color
+        mean_color = self.pattern_mean_color(nodes) if nodes else "#000000"
+
+        # Replace fill with solid color
+        el.set("fill", mean_color)
+
+        # Logging
+        self.log(logging.WARNING,
+                f"Replaced pattern '{ref_id}' with fill '{mean_color}' "
+                f"on {self.node_str(el)}")
+
+        return 1
+
+    def extract_vertices(self, el):
+        """Return a list of (x, y, angle) tuples for each segment endpoint of a path."""
+        tag = el.tag.lower()
+        pts = []
+
+        if tag.endswith("path"):
+            path = el.path.to_absolute()
+            coords = []
+
+            # Collect endpoints first
+            for cmd in path:
+                if hasattr(cmd, "end"):
+                    x, y = cmd.end
+                elif hasattr(cmd, "args") and len(cmd.args) >= 2:
+                    x, y = cmd.args[-2:]
+                else:
+                    continue
+                coords.append((x, y))
+
+            # Now compute angles
+            for i, (x, y) in enumerate(coords):
+                if i == 0 and len(coords) > 1:
+                    # forward difference for first vertex
+                    nx, ny = coords[1]
+                    dx = nx - x
+                    dy = ny - y
+                else:
+                    # backward difference for others
+                    px, py = coords[i - 1] if i > 0 else (x, y)
+                    dx = x - px
+                    dy = y - py
+
+                angle = math.degrees(math.atan2(dy, dx)) if (dx or dy) else 0.0
+                pts.append((x, y, angle))
+
+        return pts
+
+
+
+
+    def resolve_marker_geometry(self, marker, el):
+        """
+        Resolve fill and stroke colors inside a marker according to SVG paint context rules.
+        - context-stroke → use stroke color of referencing element
+        - context-fill   → use fill color of referencing element
+        - explicit color → keep as-is
+        - gradients / patterns → keep reference intact
+        """
+        stroke_color = el.style.get("stroke", el.get("stroke", "#000"))
+        fill_color = el.style.get("fill", el.get("fill", "none"))
+
+        for child in marker:
+            new = child.copy()
+
+            # Resolve fill
+            fill = new.get("fill")
+            if fill == "context-stroke":
+                new.set("fill", stroke_color)
+            elif fill == "context-fill":
+                new.set("fill", fill_color)
+            elif fill in (None, "none"):
+                new.set("fill", "none")
+
+            # Resolve stroke
+            stroke = new.get("stroke")
+            if stroke == "context-stroke":
+                # Scissors markers should not have stroke outlines
+                if marker.get("id") == "Scissors":
+                    new.set("stroke", "none")
+                else:
+                    new.set("stroke", stroke_color)
+            elif stroke == "context-fill":
+                new.set("stroke", fill_color)
+            elif stroke in (None, "none"):
+                new.set("stroke", "none")
+
+            yield new
+
+
+    def compute_vertex_transform(self, el, marker, x, y, angle, pos):
+        refX = float(marker.get("refX", 0))
+        refY = float(marker.get("refY", 0))
+        orient = marker.get("orient", "auto")
+        units  = marker.get("markerUnits", "strokeWidth")
+
+        if orient == "auto":
+            rot = angle
+        elif orient == "auto-start-reverse":
+            rot = angle + 180 if pos == "start" else angle
+        else:
+            rot = float(orient)
+
+        if units == "strokeWidth":
+            scale = float(el.get("stroke-width", 1))
+        else:
+            scale = 1.0
+            
+
+        self.log(logging.DEBUG,f"Scale={scale}, markerUnits={units} for node {self.node_str(el)}")
+
+        tr = inkex.Transform()
+        tr.add_translate(x, y)
+        tr.add_rotate(rot)
+        tr.add_scale(scale)
+        tr.add_translate(-refX, -refY)
+
+        self.log(logging.DEBUG,f"vertex_tr={tr} for node {self.node_str(marker)}")
+
+        return tr
+
+
+
+    def expand_marker_instance(self, el, marker, vertex, idx, pos):
+        x, y, angle = vertex
+
+        # Compute full transform (handles orient, markerUnits, CTM, refX/refY)
+        vertex_tr = self.compute_vertex_transform(el, marker, x, y, angle, pos)
+        shape_tr = inkex.Transform(el.get("transform"))
+
+        parent = el.getparent()
+        insert_pos = parent.index(el) + 1
+
+        # Insert resolved marker geometry
+        for geom in self.resolve_marker_geometry(marker, el):
+            geom_tr = Transform(geom.get("transform"))
+
+            self.log(logging.DEBUG, f"vertex_tr: {vertex_tr}")
+            self.log(logging.DEBUG, f"geom_tr: {geom_tr}")
+            self.log(logging.DEBUG, f"shape_tr: {shape_tr}")
+
+            geom.transform = shape_tr @ vertex_tr @ geom_tr
+
+            self.log(logging.DEBUG, f"final_tr: {geom.transform}")
+
+            parent.insert(insert_pos, geom)
+            insert_pos += 1
+
+
+
+
+    def resolve_marker_for_element(self, el):
+        self.log(logging.DEBUG, f"Resolving marker for node {self.node_str(el)}")
+
+        marker_attrs = {
+            "start": "marker-start",
+            "mid":   "marker-mid",
+            "end":   "marker-end",
+        }
+
+        # Check if any marker attribute exists
+        if not any(el.get(a) for a in marker_attrs.values()):
+            return 0
+
+        count = 0
+
+        # Extract path geometry
+        pts = self.extract_vertices(el)
+
+        self.log(logging.DEBUG, f"Vertex count for {el.get('id')}: {len(pts)}")
+        self.log(logging.DEBUG, f"All vertices: {pts}")
+
+        for pos, attr_name in marker_attrs.items():
+
+            self.log(logging.DEBUG, f"Inspecting marker reference {attr_name} for node {self.node_str(el)}")
+
+            marker, marker_id = self.ref_target(el, attr_name)
+            if marker is None:
+                continue
+
+            self.log(logging.DEBUG, f"Found marker {self.node_str(marker)}")
+
+            # Determine which vertices to use
+            match pos:
+                case "start":
+                    indices = [0]
+                case "end":
+                    indices = [len(pts)-1]
+                case "mid":
+                    indices = range(1, len(pts)-1)
+
+            self.log(logging.DEBUG, f"Marker position={pos}, indices={list(indices)}")
+
+            for idx in indices:
+                self.log(logging.DEBUG, f"Expanding marker {marker.get('id')} at vertex {pts[idx]} (index {idx})")
+                self.expand_marker_instance(el, marker, pts[idx], idx, pos)
+                count += 1
+
+        # Remove marker attributes
+        for attr in marker_attrs.values():
+            el.attrib.pop(attr, None)
+
+        return count
+
+    # endregion
+
+    # region --- Resolve References ---
+
     def remove_filter_for_element(self, el):
         """
         Remove filter references and delete corresponding <filter> nodes.
@@ -823,107 +1056,37 @@ class GT7Output(inkex.OutputExtension):
 
         return 0
 
-    def remove_pattern_for_element(self, el):
-        """
-        Replace pattern fill with mean color and remove the pattern reference.
-        Returns number of patterns removed (0 or 1).
-        """
-
-        # Resolve referenced element
-        ref, ref_id = self.ref_target(el, "fill")
-        if ref is None:
-            return 0
-
-        # Only handle <pattern>, ignore other references
-        tag = self.tag_name(ref)
-        if tag != "pattern":
-            return 0
-
-        # Collect geometry nodes inside the pattern
-        nodes = list(ref.iterchildren())
-
-        # Compute mean color
-        mean_color = self.pattern_mean_color(nodes) if nodes else "#000000"
-
-        # Replace fill with solid color
-        el.set("fill", mean_color)
-
-        # Logging
-        self.log(logging.WARNING,
-                f"Replaced pattern '{ref_id}' with fill '{mean_color}' "
-                f"on {self.node_str(el)}")
-
-        return 1
-
-    #def resolve_marker_for_element(self, el):
-    #    markers = {
-    #        "start": el.get("marker-start"),
-    #        "mid":   el.get("marker-mid"),
-    #        "end":   el.get("marker-end")
-    #    }
-
-    #    if not any(markers.values()):
-    #        return 0
-
-    #    count = 0
-
-        # Extract path geometry
-    #    pts = self.extract_vertices(el)
-
-    #    for pos, marker_url in markers.items():
-    #        if not marker_url:
-    #            continue
-
-    #        marker_id = self.url_to_id(marker_url)
-    #        marker = self.find_node(marker_id)
-    #        if marker is None:
-    #            continue
-
-            # Determine which vertices to use
-    #        if pos == "start":
-    #            indices = [0]
-    #        elif pos == "end":
-    #            indices = [len(pts)-1]
-    #        else:  # mid
-    #            indices = range(1, len(pts)-1)
-
-    #        for idx in indices:
-    #            self.expand_marker_instance(el, marker, pts[idx], idx)
-    #            count += 1
-
-        # Remove marker attributes
-    #    for attr in ("marker-start", "marker-mid", "marker-end"):
-    #        el.attrib.pop(attr, None)
-
-    #    return count
-
-
     def resolve_references(self):
         grad_count = 0
         clip_count = 0
         filter_count = 0
         mask_count = 0
         pattern_count = 0
+        marker_count = 0
 
         for el in list(self.svg.iter()):
             tag = self.tag_name(el)
 
-            match tag:
-                case "path" | "rect" | "circle" | "ellipse":
-                    grad_count += self.resolve_gradient_for_shape(el)
-                    clip_count += self.resolve_clippath_for_shape(el)
-                    filter_count += self.remove_filter_for_element(el)
-                    mask_count += self.remove_mask_for_element(el)
-                    pattern_count += self.remove_pattern_for_element(el)
+            for el in list(self.svg.iter()):
+                tag = self.tag_name(el)
 
-                case "clippath":
-                    clip_count += self.resolve_clippath_for_shape(el)
+                match tag:
+                    case "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon":
+                        grad_count += self.resolve_gradient_for_shape(el)
+                        clip_count += self.resolve_clippath_for_shape(el)
+                        filter_count += self.remove_filter_for_element(el)
+                        mask_count += self.remove_mask_for_element(el)
+                        pattern_count += self.remove_pattern_for_element(el)
+                        marker_count += self.resolve_marker_for_element(el)
 
-                case _:
-                    # Filters/masks can appear on ANY element
-                    filter_count += self.remove_filter_for_element(el)
-                    mask_count += self.remove_mask_for_element(el)
-                    pattern_count += self.remove_pattern_for_element(el)
+                    case "clippath":
+                        clip_count += self.resolve_clippath_for_shape(el)
+
+                    case _:
+                        filter_count += self.remove_filter_for_element(el)
+                        mask_count += self.remove_mask_for_element(el)
+                        pattern_count += self.remove_pattern_for_element(el)
+
 
         if grad_count:
             self.log(logging.INFO, f"Normalized {grad_count} gradients")
@@ -939,6 +1102,9 @@ class GT7Output(inkex.OutputExtension):
 
         if pattern_count:
             self.log(logging.INFO, f"Replaced {pattern_count} patterns with solid fill color")
+        
+        if marker_count:
+            self.log(logging.INFO, f"Resolved {marker_count} markers")
 
         self.log_defs()
 
