@@ -861,18 +861,17 @@ class GT7Output(inkex.OutputExtension):
         return pts
 
 
-
-
     def resolve_marker_geometry(self, marker, el):
-        """
-        Resolve fill and stroke colors inside a marker according to SVG paint context rules.
-        - context-stroke → use stroke color of referencing element
-        - context-fill   → use fill color of referencing element
-        - explicit color → keep as-is
-        - gradients / patterns → keep reference intact
-        """
-        stroke_color = el.style.get("stroke", el.get("stroke", "#000"))
-        fill_color = el.style.get("fill", el.get("fill", "none"))
+        stroke_color = el.get("stroke", "#000")
+        fill_color   = el.get("fill", "none")
+        stroke_width = float(el.get("stroke-width", 1))
+
+        units = marker.get("markerUnits", "strokeWidth")
+        if units == "strokeWidth":
+            # scale marker geometry by stroke width
+            scale_factor = stroke_width
+        else:
+            scale_factor = 1.0
 
         for child in marker:
             new = child.copy()
@@ -889,7 +888,6 @@ class GT7Output(inkex.OutputExtension):
             # Resolve stroke
             stroke = new.get("stroke")
             if stroke == "context-stroke":
-                # Scissors markers should not have stroke outlines
                 if marker.get("id") == "Scissors":
                     new.set("stroke", "none")
                 else:
@@ -899,7 +897,13 @@ class GT7Output(inkex.OutputExtension):
             elif stroke in (None, "none"):
                 new.set("stroke", "none")
 
+            # Normalize stroke width for start/end markers
+            sw = float(new.get("stroke-width", 1))
+            sw *= scale_factor
+            new.set("stroke-width", str(sw))
+
             yield new
+
 
 
     def compute_vertex_transform(self, el, marker, x, y, angle, pos):
