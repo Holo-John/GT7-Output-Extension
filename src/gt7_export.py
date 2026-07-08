@@ -248,7 +248,7 @@ class GT7Export(inkex.OutputExtension):
         """
         Unified logging wrapper:
         - Python logging (with real caller info)
-        - inkex.utils.debug mirror
+        - self.msg mirror
         """
 
         if level == logging.ERROR:
@@ -371,6 +371,8 @@ class GT7Export(inkex.OutputExtension):
 
         return node
 
+    def node_str(self, node):
+        return f"<{self.tag_name(node)}, id={node.get("id")}, attrib={dict(node.attrib)}>"
 
     def add_node(self, node, parent, index=None):
         tag = node.tag.split('}')[-1]
@@ -449,7 +451,10 @@ class GT7Export(inkex.OutputExtension):
             return 0.0
         try:
             return float(s)
-        except ValueError:
+        except ValueError as e:
+            self.log(logging.WARNING, f"Cannot convert {value} to float")
+            self.log(logging.WARNING, str(e))
+            self.log(logging.WARNING, traceback.format_exc())
             return 0.0
             
     def round_floats_in_string(self, s, digits=3):
@@ -516,8 +521,9 @@ class GT7Export(inkex.OutputExtension):
                 t_transform = Transform(tr)
                 return t_transform @ t_translate
             except Exception as e:
-                self.log(logging.ERROR, str(e))
-                self.log(logging.ERROR, traceback.format_exc())
+                self.log(logging.WARNING, f"Cannot apply transform {tr} to node {self.node_str(use_el)}")
+                self.log(logging.WARNING, str(e))
+                self.log(logging.WARNING, traceback.format_exc())
                 pass
 
         return t_translate
@@ -531,7 +537,11 @@ class GT7Export(inkex.OutputExtension):
             
         try:
             base = Transform(el.get("transform") or "")
-        except Exception:
+        except Exception as e:
+            self.log(logging.WARNING, f"Cannot append transform {t} to {self.node_str(el)}")
+            self.log(logging.WARNING, str(e))
+            self.log(logging.WARNING, traceback.format_exc())
+
             base = Transform()
             
         combined = t @ base
@@ -775,7 +785,7 @@ class GT7Export(inkex.OutputExtension):
             el.attrib.pop("filter", None)
             tag = self.tag_name(el)
             id = el.get("id")
-            self.log(logging.WARNING, f"Removed filter from <{tag} id='{id}'>")
+            self.log(logging.WARNING, f"Removed filter from <{self.node_str(el)}>")
             return 1
 
         return 0
@@ -793,7 +803,7 @@ class GT7Export(inkex.OutputExtension):
             el.attrib.pop("mask", None)
             tag = self.tag_name(el)
             id = el.get("id")
-            self.log(logging.WARNING, f"Removed mask from <{tag} id='{id}'>")
+            self.log(logging.WARNING, f"Removed mask from {self.node_str(el)}")
             return 1
 
         return 0
@@ -824,11 +834,9 @@ class GT7Export(inkex.OutputExtension):
         el.set("fill", mean_color)
 
         # Logging
-        tag = self.tag_name(el)
-        id = el.get("id")
         self.log(logging.WARNING,
                 f"Replaced pattern '{ref_id}' with fill '{mean_color}' "
-                f"on <{tag} id='{id}'>")
+                f"on {self.node_str(el)}")
 
         return 1
 
@@ -1419,7 +1427,7 @@ class GT7Export(inkex.OutputExtension):
     
     def apply_transform_to_clippath_used_by(self, node, T):
         self.log(logging.DEBUG,
-            f"id={node.get('id')} tag={self.tag_name(node)} clip-path={node.get('clip-path')} T={T}"
+            f"id={self.node_str(node)} clip-path={node.get('clip-path')} T={T}"
         )
 
         clip = node.get("clip-path")
@@ -1471,7 +1479,7 @@ class GT7Export(inkex.OutputExtension):
         tag = self.tag_name(node)
 
         self.log(logging.DEBUG,
-            f"id={node.get('id')} tag={tag} transform={transform} "
+            f"{self.node_str(node)}, transform={transform} "
         )
 
 
@@ -1493,12 +1501,11 @@ class GT7Export(inkex.OutputExtension):
                     return (0,node)
 
         except Exception as e:
-            inkex.utils.debug(
-                f"Node transform failed for id={node.get('id')} "
-                f"tag={node.tag} attrib={dict(node.attrib)}"
-            )
-            inkex.utils.debug(f"exception: {type(e).__name__}: {e}")
-            inkex.utils.debug(traceback.format_exc())
+            self.log(logging.WARNING, f"Node transform failed for {self.node_str(node)} ")
+            self.log(logging.WARNING, f"tag={node.tag} attrib={dict(node.attrib)}")
+            
+            self.log(logging.WARNING, f"exception: {type(e).__name__}: {e}")
+            self.log(logging.WARNING, traceback.format_exc())
             return (0, node)
 
         return (1, node)
@@ -1753,7 +1760,7 @@ class GT7Export(inkex.OutputExtension):
         for child in defs:
             tag = self.tag_name(child)
             cid = child.get("id")
-            self.log(logging.DEBUG, f"defs child: tag={tag} id={cid} attrib={dict(child.attrib)}")
+            self.log(logging.DEBUG, f"defs child: {self.node_str(child)}")
         self.log(logging.DEBUG, "--- END DEFS ---")
 
 
@@ -1925,7 +1932,7 @@ class GT7Export(inkex.OutputExtension):
 
         # Skip non geometry nodes
         if not self.is_geometry(node):
-            self.log(logging.DEBUG,f"Ignoring node {tag} id={id}")
+            self.log(logging.DEBUG,f"Ignoring node {self.node_str(node)}")
             return
 
         # Remove all attributes not in whitelist
@@ -2653,7 +2660,7 @@ class GT7Export(inkex.OutputExtension):
         for attr in ("fill", "stroke"):
             grad, grad_id = self.ref_target(shape, attr)
             
-            self.log(logging.DEBUG, f"Shape {self.tag_name(shape)} id={shape.get('id')}, {attr}={grad_id}")
+            self.log(logging.DEBUG, f"Shape = {self.node_str(shape)}")
 
             grad = self.find_node(grad_id)
             if grad is None:
@@ -3118,99 +3125,18 @@ class GT7Export(inkex.OutputExtension):
     # region ---- Inkscape Actions ----
 
     def path_intersection(self, pathA, pathB):
-            # Build minimal SVG
-            minimal_svg = """<svg xmlns="http://www.w3.org/2000/svg"></svg>"""
-            doc = inkex.load_svg(minimal_svg)
-            root = doc.getroot()
-            root.set('xmlns', 'http://www.w3.org/2000/svg')
+        doc, ids = self.build_svg_for_actions([pathA, pathB], prefix="bool")
 
-            a = inkex.PathElement()
-            a.set("id", "boolA")
-            a.set("d", pathA.get("d"))
-            self.copy_presentation_attributes(pathA, a)
-            root.append(a)
-
-            b = inkex.PathElement()
-            b.set("id", "boolB")
-            b.set("d", pathB.get("d"))
-            self.copy_presentation_attributes(pathB, b)
-            root.append(b)
-
-            svg_input = inkex.etree.tostring(root, encoding="unicode")
-            self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
-
-            # Actions to perform on the selected paths
-            actions = "path-intersection"
-
-            # Select both boolA and boolB, then run the boolean intersection and save the result
-            result_bytes = inkex.command.inkscape_command(
-                doc,
-                select="boolA,boolB",
-                actions=actions,
-            )
-
-            self.log(logging.DEBUG, f"Inkscape output size={len(result_bytes)} bytes")
-
-            result_doc = inkex.load_svg(result_bytes)
-            result_root = result_doc.getroot()
-
-            svg_output = inkex.etree.tostring(result_root, encoding="unicode")
-            self.log(logging.DEBUG,f"Inkscape ouput:\n {svg_output}")
-
-            # Extract result - prefer any path that is not one of the operands
-            paths = result_root.findall(".//{http://www.w3.org/2000/svg}path")
-            candidates = [p for p in paths if p.get("id") not in ("boolA", "boolB")]
-
-            if candidates:
-                intersection = candidates[-1]  # last created path is usually the result
-            else:
-                # Fallback: if Inkscape ever replaces instead of appending
-                intersection = paths[-1] if paths else None
-
-            if intersection is None:
-                return self.empty_path()
-
-            new_path = inkex.PathElement()
-            new_path.set("d", intersection.get("d"))
-
-            # Copy full path geometry
-            if hasattr(intersection, "path"):
-                new_path.path = intersection.path
-            else:
-                new_path.set("d", intersection.get("d"))
-
-            # Copy presentation attributes
-            self.copy_presentation_attributes(intersection, new_path)
-
-            return new_path
-    
-    def path_union(self, paths):
-        # Build minimal SVG
-        minimal_svg = """<svg xmlns="http://www.w3.org/2000/svg"></svg>"""
-        doc = inkex.load_svg(minimal_svg)
         root = doc.getroot()
-
-        ids = []
-        for i, p in enumerate(paths):
-            elem = inkex.PathElement()
-            elem_id = f"u{i}"
-            elem.set("id", elem_id)
-            elem.set("d", p.get("d"))
-            self.copy_presentation_attributes(p, elem)
-            root.append(elem)
-            ids.append(elem_id)
-
-        select_ids = ",".join(ids)
-
         svg_input = inkex.etree.tostring(root, encoding="unicode")
         self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
 
-        actions = "path-union"
+        select_ids = ",".join(ids)
 
         result_bytes = inkex.command.inkscape_command(
             doc,
             select=select_ids,
-            actions=actions,
+            actions="path-intersection",
         )
 
         result_doc = inkex.load_svg(result_bytes)
@@ -3219,15 +3145,47 @@ class GT7Export(inkex.OutputExtension):
         svg_output = inkex.etree.tostring(result_root, encoding="unicode")
         self.log(logging.DEBUG,f"Inkscape ouput:\n {svg_output}")
 
-        # Extract union result
         out_paths = result_root.findall(".//{http://www.w3.org/2000/svg}path")
         candidates = [p for p in out_paths if p.get("id") not in ids]
 
-        if candidates:
-            union = candidates[-1]
-        else:
-            union = out_paths[-1] if out_paths else None
+        intersection = candidates[-1] if candidates else (out_paths[-1] if out_paths else None)
+        if intersection is None:
+            return self.empty_path()
 
+        new_path = inkex.PathElement()
+        new_path.set("d", intersection.get("d"))
+
+        if hasattr(intersection, "path"):
+            new_path.path = intersection.path
+
+        self.copy_presentation_attributes(intersection, new_path)
+        return new_path
+
+    
+    def path_union(self, paths):
+        doc, ids = self.build_svg_for_actions(paths, prefix="u")
+
+        root = doc.getroot()
+        svg_input = inkex.etree.tostring(root, encoding="unicode")
+        self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
+
+        select_ids = ",".join(ids)
+
+        result_bytes = inkex.command.inkscape_command(
+            doc,
+            select=select_ids,
+            actions="path-union",
+        )
+
+        result_doc = inkex.load_svg(result_bytes)
+        result_root = result_doc.getroot()
+
+        svg_output = inkex.etree.tostring(result_root, encoding="unicode")
+        self.log(logging.DEBUG,f"Inkscape ouput:\n {svg_output}")
+        out_paths = result_root.findall(".//{http://www.w3.org/2000/svg}path")
+        candidates = [p for p in out_paths if p.get("id") not in ids]
+
+        union = candidates[-1] if candidates else (out_paths[-1] if out_paths else None)
         if union is None:
             return None
 
@@ -3235,6 +3193,7 @@ class GT7Export(inkex.OutputExtension):
         new_path.set("d", union.get("d"))
         self.copy_presentation_attributes(union, new_path)
         return new_path
+
 
     def compute_tile_size_from_nodes(self, nodes):
         """
@@ -3255,10 +3214,10 @@ class GT7Export(inkex.OutputExtension):
         return width, height
 
 
-    def build_svg_from_nodes(self, nodes):
+    def build_svg_for_actions(self, nodes, prefix):
         """
-        Build a minimal standalone SVG document from inkex nodes.
-        Follows the same structure as your boolean-operation input builder.
+        Build a minimal standalone SVG document suitable for Actions API
+        boolean operations. Works for intersection, union, difference, etc.
         """
 
         width, height = self.compute_tile_size_from_nodes(nodes)
@@ -3272,15 +3231,31 @@ class GT7Export(inkex.OutputExtension):
         doc = inkex.load_svg(minimal_svg)
         root = doc.getroot()
 
+        root.set('xmlns', 'http://www.w3.org/2000/svg')
+
+        ids = []
+
         for i, node in enumerate(nodes):
             if not hasattr(node, "copy"):
                 continue
+
             clone = node.copy()
-            clone.set("id", f"n{i}")
+
+            elem_id = f"{prefix}{i}"
+            clone.set("id", elem_id)
+
             self.copy_presentation_attributes(node, clone)
+
             root.append(clone)
 
-        return doc
+            # IMPORTANT: rebind using root, not doc
+            clone = root.getElementById(elem_id)
+
+            ids.append(elem_id)
+
+        return doc, ids
+
+
 
 
     def rasterize_nodes(self, nodes):
@@ -3291,7 +3266,8 @@ class GT7Export(inkex.OutputExtension):
             """
 
             # 1) Build SVG input
-            doc = self.build_svg_from_nodes(nodes)
+            doc, ids = self.build_svg_for_actions(nodes, "path")
+            
             root = doc.getroot()
             svg_input = inkex.etree.tostring(root, encoding="unicode")
             self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
