@@ -47,7 +47,10 @@ class GT7Export(inkex.OutputExtension):
     
     # region constants
 
-    STRIP_ALPHA_FROM_COLOR = True
+    STRIP_ALPHA_FROM_GRADIENTS = True
+    COORDINATE_ROUNDING_PRECISION = 3
+    GRADIENT_MESH_PATCH_DIVISIONS = 2
+    COMPRESS_OUTPUT = False
 
     GT7_ATTRS = {
         "id",
@@ -1840,23 +1843,25 @@ class GT7Export(inkex.OutputExtension):
             "fx", "fy",                      # radial gradients
         )
 
+        digits = self.COORDINATE_ROUNDING_PRECISION
+
         for el in node.iter():
 
             # 1. Path data
             if "d" in el.attrib:
-                el.set("d", self.round_floats_in_string(el.get("d")))
+                el.set("d", self.round_floats_in_string(el.get("d"), digits=digits))
 
             # 2. Generic float attributes
             for attr in float_attrs:
                 if attr in el.attrib:
-                    el.set(attr, self.round_floats_in_string(el.get(attr)))
+                    el.set(attr, self.round_floats_in_string(el.get(attr), digits=digits))
 
             # 3. Transform attributes (elements + gradients)
             if "transform" in el.attrib:
-                el.set("transform", self.round_floats_in_string(el.get("transform")))
+                el.set("transform", self.round_floats_in_string(el.get("transform"), digits=digits))
 
             if "gradientTransform" in el.attrib:
-                el.set("gradientTransform", self.round_floats_in_string(el.get("gradientTransform")))
+                el.set("gradientTransform", self.round_floats_in_string(el.get("gradientTransform"), digits=digits))
 
 
     def remove_comments(self, node=None):
@@ -2328,7 +2333,7 @@ class GT7Export(inkex.OutputExtension):
 
     def strip_alpha_from_color(self, stop):
         # Global toggle
-        if not self.STRIP_ALPHA_FROM_COLOR:
+        if not self.STRIP_ALPHA_FROM_GRADIENTS:
             return
 
         # Remove stop-opacity entirely
@@ -2399,7 +2404,7 @@ class GT7Export(inkex.OutputExtension):
         gid = grad.get("id", "")
         self.log(logging.DEBUG,
                  f"Normalized gradient stops for id={gid} "
-                 f"(first+last only, alpha stripped={self.STRIP_ALPHA_FROM_COLOR})")
+                 f"(first+last only, alpha stripped={self.STRIP_ALPHA_FROM_GRADIENTS})")
 
     def normalize_gradient_units(self, grad, shape):
         """
