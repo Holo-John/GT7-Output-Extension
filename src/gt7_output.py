@@ -363,7 +363,6 @@ class GT7Output(inkex.OutputExtension):
 
         # Case 3: plain "foo" (not valid for markers, but safe fallback)
         return url
-
     
     def ref_target(self, el, attr="href"):
         href = el.get(attr) or el.get(f"{{{self.XLINK_NS}}}{attr}")
@@ -1373,7 +1372,12 @@ class GT7Output(inkex.OutputExtension):
 
     # endregion
 
-    # region --- Simplify Geometry ---
+    # region --- Geometry ---
+
+    def is_empty_path(self, p):
+        if p is None:
+            return True
+        return p.get("d", "").strip() == ""
 
     def to_px(self, value):
         if value is None:
@@ -1458,7 +1462,7 @@ class GT7Output(inkex.OutputExtension):
 
         # --- 4. Normalize marker elements ---
         for child in node:
-            tag = (child.tag or "").lower()
+            tag = self.tag_name(child)
             if tag.endswith("marker"):
                 for attr in ("markerWidth", "markerHeight", "refX", "refY"):
                     if attr in child.attrib:
@@ -1936,7 +1940,6 @@ class GT7Output(inkex.OutputExtension):
         self.log(logging.DEBUG,
             f"{self.node_str(node)}, transform={transform} "
         )
-
 
         try:
             match tag:
@@ -3217,7 +3220,7 @@ class GT7Output(inkex.OutputExtension):
 
     # endregion
 
-    # region --- clipping ---
+    # region --- Clipping ---
     
 
     def resolve_clippath(self, cp, transform = Transform()):
@@ -3264,7 +3267,11 @@ class GT7Output(inkex.OutputExtension):
 
         # group → unify children
         elif tag == "g":
-            parts = [self.resolve_clippath_geometry(child, M) for child in node]
+            parts = [
+                p for child in node
+                for p in [self.resolve_clippath_geometry(child, M)]
+                if p is not None and not self.is_empty_path(p)
+            ]
             geom = self.path_union(parts)
 
         else:
