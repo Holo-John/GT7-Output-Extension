@@ -825,123 +825,149 @@ class GT7Output(inkex.OutputExtension):
 
 
     def extract_vertices(self, el):
-        """Return a list of (x, y, angle) tuples for each segment endpoint of a path."""
         pts = []
-
-        tag = (el.tag or "").lower()
-        if not tag.endswith("path"):
-            return pts
 
         if not hasattr(el, "path") or el.path is None:
             return pts
 
-        try:
-            path = el.path.to_absolute()
-        except Exception:
-            return pts
-        if path is None:
+        if not (getattr(el, "tag", "") or "").lower().endswith("path"):
             return pts
 
-        prev_x: float | None = None
-        prev_y: float | None = None
-        prev_cx: float | None = None
-        prev_cy: float | None = None
-        angle_prev: float | None = None
+        try:
+            path = el.path.to_absolute().to_non_shorthand()
+        except Exception:
+            return pts
+
+        def same_point(a, b, eps=1e-9):
+            return abs(a[0] - b[0]) < eps and abs(a[1] - b[1]) < eps
+
+        def angle_from_vec(v):
+            x, y = v.real, v.imag
+            if x == 0 and y == 0:
+                return 0.0
+            a = math.degrees(math.atan2(y, x))
+            return (a + 180.0) % 360.0 - 180.0
+
+        def unit(z):
+            x, y = z.real, z.imag
+            l = math.hypot(x, y)
+            if l == 0.0:
+                return 0j
+            return complex(x / l, y / l)
+
+        def add(a, b):
+            return a + b
+
+        def end_point(cmd, fallback=None):
+            if hasattr(cmd, "end"):
+                return cmd.end
+            if hasattr(cmd, "args") and len(cmd.args) >= 2:
+                return complex(cmd.args[-2], cmd.args[-1])
+            return fallback
+
+        def tangent(cmd, first, prev, prev_prev=0j, t=0.0):
+            try:
+                v = cmd.unit_tangent(first, prev, prev_prev, t)
+                return complex(v.x, v.y)
+            except Exception:
+                p0 = prev
+                p1 = end_point(cmd, prev)
+                if p0 is None or p1 is None:
+                    return 0j
+                return unit(p1 - p0)
+
+        subpaths = []
+        current = []
+        start_pt = None
+        prev_pt = None
 
         for cmd in path:
             letter = cmd.letter.upper()
 
-            # M = moveto → first vertex (no tangent yet)
             if letter == "M":
-                if hasattr(cmd, "args") and len(cmd.args) >= 2:
-                    x, y = cmd.args[:2]
-                    pts.append((x, y, 0.0))
-                    prev_x, prev_y = x, y
-                prev_cx = prev_cy = None
+                if current:
+                    subpaths.append((start_pt, current))
+                current = []
+                start_pt = end_point(cmd)
+                prev_pt = start_pt
                 continue
 
-            # Determine endpoint
-            if hasattr(cmd, "end"):
-                x, y = cmd.end
-            elif hasattr(cmd, "args") and len(cmd.args) >= 2:
-                x, y = cmd.args[-2:]
-            else:
+            if prev_pt is None:
                 continue
 
-            dx = dy = 0.0
-
-            if letter == "C":
-                # cubic: P0 = prev, P1,P2,P3 = args
-                if prev_x is not None and prev_y is not None:
-                    x1, y1, x2, y2, x3, y3 = cmd.args
-                    # derivative at t=1: 3*(P3 - P2)
-                    dx, dy = 3 * (x3 - x2), 3 * (y3 - y2)
-                    prev_cx, prev_cy = x2, y2
-
-            elif letter == "S":
-                # smooth cubic: P2,P3 = args, P1 is reflection of prev_cx
-                x2, y2, x3, y3 = cmd.args
-                dx, dy = 3 * (x3 - x2), 3 * (y3 - y2)
-                prev_cx, prev_cy = x2, y2
-
-            elif letter == "Q":
-                # quadratic: P0 = prev, P1,P2 = args
-                if prev_x is not None and prev_y is not None:
-                    x1, y1, x2, y2 = cmd.args
-                    # derivative at t=1: 2*(P2 - P1)
-                    dx, dy = 2 * (x2 - x1), 2 * (y2 - y1)
-                    prev_cx, prev_cy = x1, y1
-
-            elif letter == "T":
-                # smooth quadratic: reflect previous control point if available
-                if (
-                    prev_x is not None and prev_y is not None and
-                    prev_cx is not None and prev_cy is not None
-                ):
-                    rx = 2 * prev_x - prev_cx
-                    ry = 2 * prev_y - prev_cy
-                    dx, dy = 2 * (x - rx), 2 * (y - ry)
-                elif prev_x is not None and prev_y is not None:
-                    dx, dy = x - prev_x, y - prev_y
-                prev_cx = prev_cy = None
-
-            elif letter in ("L", "H", "V"):
-                # straight line
-                if prev_x is not None and prev_y is not None:
-                    dx, dy = x - prev_x, y - prev_y
-                prev_cx = prev_cy = None
-
+            current.append(cmd)
+            if letter == "Z":
+                prev_pt = start_pt
             else:
-                # Z or unsupported → just move endpoint
-                prev_x, prev_y = x, y
-                prev_cx = prev_cy = None
+                prev_pt = end_point(cmd, prev_pt)
+
+        if current:
+            subpaths.append((start_pt, current))
+
+        for sub_start, cmds in subpaths:
+            if sub_start is None or not cmds:
                 continue
 
-            # Normalize tangent
-            if dx or dy:
-                length = math.hypot(dx, dy)
-                if length != 0:
-                    dx /= length
-                    dy /= length
-                angle = math.degrees(math.atan2(dy, dx))
+            closed = any(c.letter.upper() == "Z" for c in cmds)
+            draw_cmds = [c for c in cmds if c.letter.upper() not in ("M",)]
+
+            if not draw_cmds:
+                continue
+
+            # First vertex
+            first = draw_cmds[0]
+            out_vec = tangent(first, sub_start, sub_start, 0j, t=0.0)
+
+            if closed:
+                last = next((c for c in reversed(draw_cmds) if c.letter.upper() != "Z"), None)
+                if last is not None:
+                    last_end = end_point(last, sub_start)
+                    in_vec = tangent(last, sub_start, last_end, 0j, t=1.0)
+                    v = add(unit(in_vec), unit(out_vec))
+                    if v == 0j:
+                        v = unit(out_vec)
+                    pts.append((sub_start.real, sub_start.imag, angle_from_vec(v)))
             else:
-                angle = angle_prev if angle_prev is not None else 0.0
+                pts.append((sub_start.real, sub_start.imag, angle_from_vec(unit(out_vec))))
 
-            # Continuity: only flip if nearly opposite
-            if angle_prev is not None:
-                delta = (angle - angle_prev + 180) % 360 - 180
-                if abs(delta) > 135:
-                    angle = (angle + 180) % 360 - 180
+            # Middle vertices
+            prev_cmd = None
+            prev_start = sub_start
+            prev_end = sub_start
 
-            # Normalize angle to (-180°, 180°)
-            angle = (angle + 180) % 360 - 180
+            for cmd in draw_cmds:
+                letter = cmd.letter.upper()
+                curr_end = end_point(cmd, prev_end)
+                if curr_end is None:
+                    prev_cmd = cmd
+                    prev_end = curr_end
+                    continue
 
-            pts.append((x, y, angle))
-            prev_x, prev_y = x, y
-            angle_prev = angle
+                if prev_cmd is not None and letter != "Z":
+                    in_vec = tangent(prev_cmd, sub_start, prev_start, 0j, t=1.0)
+                    out_vec = tangent(cmd, sub_start, prev_end, 0j, t=0.0)
+                    v = add(unit(in_vec), unit(out_vec))
+                    if v == 0j:
+                        v = unit(out_vec)
 
-        return pts
+                    if not pts or not same_point(pts[-1], (prev_end.real, prev_end.imag, pts[-1][2])):
+                        pts.append((prev_end.real, prev_end.imag, angle_from_vec(v)))
 
+                prev_cmd = cmd
+                prev_start = prev_end
+                prev_end = curr_end
+
+            # End vertex for open paths
+            if not closed and prev_cmd is not None and prev_end is not None:
+                in_vec = tangent(prev_cmd, sub_start, prev_start, 0j, t=1.0)
+                pts.append((prev_end.real, prev_end.imag, angle_from_vec(unit(in_vec))))
+
+        dedup = []
+        for p in pts:
+            if not dedup or not same_point(dedup[-1], p):
+                dedup.append(p)
+
+        return dedup
 
 
 
