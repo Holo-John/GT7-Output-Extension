@@ -528,6 +528,73 @@ class GT7Output(inkex.OutputExtension):
     # endregion
      
     # region --- Transformation Helpers ---        
+
+    def shape_bbox(self, node):
+        """Return (x, y, width, height) in local coordinates for a single shape node.
+        Used for objectBoundingBox → userSpaceOnUse conversion.
+        """
+
+        tag = self.tag_name(node)
+
+        # PATH
+        if tag == "path":
+            d = node.get("d")
+            if not d:
+                return None
+            p = inkex.Path(d)  # type: ignore
+            bbox = p.bounding_box()  # returns BoundingBox(x_interval, y_interval)
+            if bbox is None:
+                return 0,0,0,0
+            
+            min_pt = bbox.minimum   # Vector2d(x_min, y_min)
+            max_pt = bbox.maximum   # Vector2d(x_max, y_max)
+            return min_pt.x, min_pt.y, max_pt.x - min_pt.x, max_pt.y - min_pt.y
+
+        # RECT
+        if tag == "rect":
+            x = float(node.get("x", 0))
+            y = float(node.get("y", 0))
+            w = float(node.get("width", 0))
+            h = float(node.get("height", 0))
+            return x, y, w, h
+
+        # CIRCLE
+        if tag == "circle":
+            cx = float(node.get("cx", 0))
+            cy = float(node.get("cy", 0))
+            r  = float(node.get("r", 0))
+            return cx - r, cy - r, 2 * r, 2 * r
+
+        # ELLIPSE
+        if tag == "ellipse":
+            cx = float(node.get("cx", 0))
+            cy = float(node.get("cy", 0))
+            rx = float(node.get("rx", 0))
+            ry = float(node.get("ry", 0))
+            return cx - rx, cy - ry, 2 * rx, 2 * ry
+
+        # POLYGON / POLYLINE
+        if tag in ("polygon", "polyline"):
+            raw = node.get("points", "")
+            if not raw.strip():
+                return None
+            coords = [float(v) for v in re.split(r"[ ,]+", raw.strip()) if v]
+            pts = [(coords[i], coords[i + 1]) for i in range(0, len(coords), 2)]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            return min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
+
+        # Unsupported shape → return None
+        return None
+
+    
+    def bbox_transform(self, shape):
+        bbox = self.shape_bbox(shape)
+        if not bbox:
+            return Transform()  # identity
+
+        bx, by, bw, bh = bbox
+        return Transform(f"translate({bx},{by})") @ Transform(f"scale({bw},{bh})")
         
     def use_transform(self, use_el):
         tx = self.parse_number(use_el.get("x"))
@@ -3060,6 +3127,9 @@ class GT7Output(inkex.OutputExtension):
             new_grad = self.clone_gradient(grad)
             self.log(logging.DEBUG, f"  Cloned gradient has id={new_grad.get('id')}")
 
+            # normailze coordinates to userSpace
+            self.normalize_gradient_units(new_grad, shape)
+
             # resolve chain on the cloned gradient, get chain transform
             T_chain = self.resolve_gradient_chain(new_grad)
             self.log(logging.DEBUG, f"[GRADIENT]   T_chain for {shape.get('id')}: {T_chain}")
@@ -3077,9 +3147,8 @@ class GT7Output(inkex.OutputExtension):
             # safety: no xlink:href left
             new_grad.attrib.pop("xlink:href", None)
 
-            # normalize stops and units
+            # normalize stops
             self.normalize_gradient_stops_and_colors(new_grad)
-            self.normalize_gradient_units(new_grad, shape)
 
             self.log(
                 logging.DEBUG,
@@ -3099,71 +3168,6 @@ class GT7Output(inkex.OutputExtension):
             changed += 1
 
         return changed
-        
-    def shape_bbox(self, node):
-        """Return (x, y, width, height) in local coordinates for a single shape node.
-        Used for objectBoundingBox → userSpaceOnUse conversion.
-        """
-
-        tag = self.tag_name(node)
-
-        # PATH
-        if tag == "path":
-            d = node.get("d")
-            if not d:
-                return None
-            p = inkex.Path(d)  # type: ignore
-            bbox = p.bounding_box()  # returns BoundingBox(x_interval, y_interval)
-            min_pt = bbox.minimum   # Vector2d(x_min, y_min)
-            max_pt = bbox.maximum   # Vector2d(x_max, y_max)
-            return min_pt.x, min_pt.y, max_pt.x - min_pt.x, max_pt.y - min_pt.y
-
-        # RECT
-        if tag == "rect":
-            x = float(node.get("x", 0))
-            y = float(node.get("y", 0))
-            w = float(node.get("width", 0))
-            h = float(node.get("height", 0))
-            return x, y, w, h
-
-        # CIRCLE
-        if tag == "circle":
-            cx = float(node.get("cx", 0))
-            cy = float(node.get("cy", 0))
-            r  = float(node.get("r", 0))
-            return cx - r, cy - r, 2 * r, 2 * r
-
-        # ELLIPSE
-        if tag == "ellipse":
-            cx = float(node.get("cx", 0))
-            cy = float(node.get("cy", 0))
-            rx = float(node.get("rx", 0))
-            ry = float(node.get("ry", 0))
-            return cx - rx, cy - ry, 2 * rx, 2 * ry
-
-        # POLYGON / POLYLINE
-        if tag in ("polygon", "polyline"):
-            raw = node.get("points", "")
-            if not raw.strip():
-                return None
-            coords = [float(v) for v in re.split(r"[ ,]+", raw.strip()) if v]
-            pts = [(coords[i], coords[i + 1]) for i in range(0, len(coords), 2)]
-            xs = [p[0] for p in pts]
-            ys = [p[1] for p in pts]
-            return min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
-
-        # Unsupported shape → return None
-        return None
-
-    
-    def bbox_transform(self, shape):
-        bbox = self.shape_bbox(shape)
-        if not bbox:
-            return Transform()  # identity
-
-        bx, by, bw, bh = bbox
-        return Transform(f"translate({bx},{by})") @ Transform(f"scale({bw},{bh})")
-
 
     def apply_transform_to_gradient(self, grad, T):
         """Apply a Transform to all gradient coordinate attributes."""
