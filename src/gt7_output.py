@@ -2790,6 +2790,30 @@ class GT7Output(inkex.OutputExtension):
         self.log(logging.DEBUG,
                  f"Normalized gradient stops for id={gid} "
                  f"(first+last only, alpha stripped={self.options.strip_alpha})")
+        
+        
+    def compute_full_transform(self, node):
+        """Accumulate transforms from node up to the root (same order as apply_all_transforms)."""
+
+        transforms = []
+        current = node
+
+        # Collect transforms bottom → top
+        while current is not None:
+            try:
+                local = Transform(current.get("transform"))
+            except Exception:
+                local = Transform()
+            transforms.append(local)
+            current = current.getparent()
+
+        # Combine in correct order: parent @ local
+        T_full = Transform()
+        for t in reversed(transforms):
+            T_full = T_full @ t
+
+        return T_full
+
 
     def normalize_gradient_units(self, grad, shape):
         """
@@ -2811,32 +2835,15 @@ class GT7Output(inkex.OutputExtension):
                  f"Converting gradient id={gid} from objectBoundingBox → userSpaceOnUse")
 
         # 1. Compute bounding box in user space
-        bbox = self.compute_shape_bbox(shape)
-        if not bbox:
-            self.log(logging.WARNING,
-                     f"WARNING: Could not compute bbox for shape using gradient id={gid}")
-            grad.set("gradientUnits", "userSpaceOnUse")
-            return
+        T_bbox = self.bbox_transform(shape)
 
-        bx, by, bw, bh = bbox
-
-        # 2. Compute full transform chain of the shape
-        T_shape = self.compute_full_transform(shape)
-
-        # 3. Build bbox normalization transform
-        T_bbox = Transform(f"translate({bx},{by})") @ Transform(f"scale({bw},{bh})")
-
-        # 4. Combine transforms
-        T_final = T_shape @ T_bbox
+        self.log(logging.DEBUG,f"T_bbox={T_bbox}")
 
         # 5. Apply transform to gradient coordinates
-        self.apply_transform_to_gradient(grad, T_final)
-
-        # 6. Remove gradientTransform (already baked in)
-        grad.attrib.pop("gradientTransform", None)
+        self.apply_transform_to_gradient(grad, T_bbox)
 
         # 7. Force userSpaceOnUse
-        grad.set("gradientUnits", "userSpaceOnUse")
+        grad.set("gradientUnits", "userSpaceOnUse") 
 
         self.log(logging.DEBUG,
                  f"Gradient id={gid} converted to userSpaceOnUse")
@@ -2923,28 +2930,6 @@ class GT7Output(inkex.OutputExtension):
             el.attrib.pop("id", None)
 
         return new_grad
-
-    def compute_full_transform(self, node):
-        """Accumulate transforms from node up to the root (same order as apply_all_transforms)."""
-
-        transforms = []
-        current = node
-
-        # Collect transforms bottom → top
-        while current is not None:
-            try:
-                local = Transform(current.get("transform"))
-            except Exception:
-                local = Transform()
-            transforms.append(local)
-            current = current.getparent()
-
-        # Combine in correct order: parent @ local
-        T_full = Transform()
-        for t in reversed(transforms):
-            T_full = T_full @ t
-
-        return T_full
 
     def resolve_gradient_chain(self, grad):
         """
@@ -3115,7 +3100,7 @@ class GT7Output(inkex.OutputExtension):
 
         return changed
         
-    def compute_shape_bbox(self, node):
+    def shape_bbox(self, node):
         """Return (x, y, width, height) in user space for a single shape node."""
         tag = self.tag_name(node)
         T = self.compute_full_transform(node)
@@ -3124,7 +3109,7 @@ class GT7Output(inkex.OutputExtension):
         if tag == "path":
             d = node.get("d")
             if not d:
-                return None
+                return 0, 0, 0, 0
 
             p = inkex.Path(d) # type: ignore
             bbox = p.bounding_box()  # svg‑API: returns BoundingBox(x_interval, y_interval)
@@ -3148,8 +3133,12 @@ class GT7Output(inkex.OutputExtension):
             max_x = max(xs)
             min_y = min(ys)
             max_y = max(ys)
+            width = max_x - min_x
+            height = max_y - min_y
 
-            return min_x, min_y, max_x - min_x, max_y - min_y
+            self.log(logging.DEBUG, f"bbox = [{min_x}, {min_y}, {width}, {height}")
+
+            return min_x, min_y, width, height
 
         pts = []
 
@@ -3219,6 +3208,15 @@ class GT7Output(inkex.OutputExtension):
         max_y = max(ys)
 
         return min_x, min_y, max_x - min_x, max_y - min_y
+    
+    def bbox_transform(self, shape):
+        bbox = self.shape_bbox(shape)
+        if not bbox:
+            return Transform()  # identity
+
+        bx, by, bw, bh = bbox
+        return Transform(f"translate({bx},{by})") @ Transform(f"scale({bw},{bh})")
+
 
     def apply_transform_to_gradient(self, grad, T):
         """Apply a Transform to all gradient coordinate attributes."""
