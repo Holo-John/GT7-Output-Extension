@@ -3101,46 +3101,22 @@ class GT7Output(inkex.OutputExtension):
         return changed
         
     def shape_bbox(self, node):
-        """Return (x, y, width, height) in user space for a single shape node."""
+        """Return (x, y, width, height) in local coordinates for a single shape node.
+        Used for objectBoundingBox → userSpaceOnUse conversion.
+        """
+
         tag = self.tag_name(node)
-        T = self.compute_full_transform(node)
 
         # PATH
         if tag == "path":
             d = node.get("d")
             if not d:
-                return 0, 0, 0, 0
-
-            p = inkex.Path(d) # type: ignore
-            bbox = p.bounding_box()  # svg‑API: returns BoundingBox(x_interval, y_interval)
-
-            # Use bbox.minimum / bbox.maximum (Vector2d) → linter-safe
-            min_pt = bbox.minimum   # Vector2d(x_min, y_min) # type: ignore
-            max_pt = bbox.maximum   # Vector2d(x_max, y_max) # type: ignore
-
-            # Compute the four corners
-            pts = [
-                T.apply_to_point((min_pt.x, min_pt.y)),
-                T.apply_to_point((max_pt.x, min_pt.y)),
-                T.apply_to_point((min_pt.x, max_pt.y)),
-                T.apply_to_point((max_pt.x, max_pt.y)),
-            ]
-
-            xs = [pt[0] for pt in pts]
-            ys = [pt[1] for pt in pts]
-
-            min_x = min(xs)
-            max_x = max(xs)
-            min_y = min(ys)
-            max_y = max(ys)
-            width = max_x - min_x
-            height = max_y - min_y
-
-            self.log(logging.DEBUG, f"bbox = [{min_x}, {min_y}, {width}, {height}")
-
-            return min_x, min_y, width, height
-
-        pts = []
+                return None
+            p = inkex.Path(d)  # type: ignore
+            bbox = p.bounding_box()  # returns BoundingBox(x_interval, y_interval)
+            min_pt = bbox.minimum   # Vector2d(x_min, y_min)
+            max_pt = bbox.maximum   # Vector2d(x_max, y_max)
+            return min_pt.x, min_pt.y, max_pt.x - min_pt.x, max_pt.y - min_pt.y
 
         # RECT
         if tag == "rect":
@@ -3148,66 +3124,37 @@ class GT7Output(inkex.OutputExtension):
             y = float(node.get("y", 0))
             w = float(node.get("width", 0))
             h = float(node.get("height", 0))
-
-            pts = [
-                (x,     y),
-                (x + w, y),
-                (x,     y + h),
-                (x + w, y + h),
-            ]
+            return x, y, w, h
 
         # CIRCLE
-        elif tag == "circle":
+        if tag == "circle":
             cx = float(node.get("cx", 0))
             cy = float(node.get("cy", 0))
             r  = float(node.get("r", 0))
-
-            pts = [
-                (cx - r, cy),
-                (cx + r, cy),
-                (cx, cy - r),
-                (cx, cy + r),
-            ]
+            return cx - r, cy - r, 2 * r, 2 * r
 
         # ELLIPSE
-        elif tag == "ellipse":
+        if tag == "ellipse":
             cx = float(node.get("cx", 0))
             cy = float(node.get("cy", 0))
             rx = float(node.get("rx", 0))
             ry = float(node.get("ry", 0))
-
-            pts = [
-                (cx - rx, cy),
-                (cx + rx, cy),
-                (cx, cy - ry),
-                (cx, cy + ry),
-            ]
+            return cx - rx, cy - ry, 2 * rx, 2 * ry
 
         # POLYGON / POLYLINE
-        elif tag in ("polygon", "polyline"):
+        if tag in ("polygon", "polyline"):
             raw = node.get("points", "")
             if not raw.strip():
                 return None
-
-            # svg‑API: split on whitespace or commas
             coords = [float(v) for v in re.split(r"[ ,]+", raw.strip()) if v]
             pts = [(coords[i], coords[i + 1]) for i in range(0, len(coords), 2)]
+            xs = [p[0] for p in pts]
+            ys = [p[1] for p in pts]
+            return min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)
 
-        else:
-            return None
+        # Unsupported shape → return None
+        return None
 
-        # Apply transform to all points (svg‑API)
-        pts = [T.apply_to_point(pt) for pt in pts]
-
-        xs = [p[0] for p in pts]
-        ys = [p[1] for p in pts]
-
-        min_x = min(xs)
-        max_x = max(xs)
-        min_y = min(ys)
-        max_y = max(ys)
-
-        return min_x, min_y, max_x - min_x, max_y - min_y
     
     def bbox_transform(self, shape):
         bbox = self.shape_bbox(shape)
