@@ -198,7 +198,9 @@ class GT7Output(inkex.OutputExtension):
             self.preprocess(types_to_path=["text"], unlink_clones=True)
             
             self.resolve_styles_to_attributes()
-            self.log_svg(header="BEFORE expand_all_uses()")
+            self.log_svg(header="AFTER resolve_styles_to_attributes()")
+            self.normalize_units()
+            self.log_svg(header="AFTER normalize_units()")
             self.expand_all_uses()
             self.log_svg(header="AFTER expand_all_uses()")
             self.resolve_references()
@@ -1305,6 +1307,97 @@ class GT7Output(inkex.OutputExtension):
     # endregion
 
     # region --- Simplify Geometry ---
+
+    def to_px(self, value):
+        if value is None:
+            return 0.0
+
+        s = str(value).strip()
+        if not s:
+            return 0.0
+
+        # Try plain float first
+        try:
+            return float(s)
+        except ValueError:
+            pass
+
+        import re
+        m = re.match(r"^([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)\s*(px|mm|cm|in|pt|pc)$", s)
+        if not m:
+            return 0.0
+
+        num = float(m.group(1))
+        unit = m.group(2)
+
+        if unit == "px": return num
+        if unit == "mm": return num * 3.779527559
+        if unit == "cm": return num * 37.79527559
+        if unit == "in": return num * 96.0
+        if unit == "pt": return num * (96.0 / 72.0)
+        if unit == "pc": return num * (96.0 / 6.0)
+
+        return num
+    
+    def normalize_transform(self, transform_str):
+        """
+        Convert unit-bearing transform parameters to px.
+        Example: translate(5mm, 2mm) → translate(18.8976, 7.55905)
+        """
+        import re
+
+        def repl(match):
+            num = match.group(1)
+            return str(self.to_px(num))
+
+        # Replace numbers inside transform(...) calls
+        return re.sub(r"([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)", repl, transform_str)
+
+
+    def normalize_units(self, node=None):
+        """
+        Convert all unit-bearing attributes and style properties of an SVG node to px.
+        Path geometry is already px and is NOT modified.
+        """
+        if node is None:
+            node = self.svg
+
+        # --- 1. Normalize presentation attributes ---
+        length_attrs = [
+            "x", "y", "cx", "cy", "r",
+            "rx", "ry",
+            "width", "height",
+            "stroke-width",
+            "markerWidth", "markerHeight",
+            "refX", "refY",
+        ]
+
+        for attr in length_attrs:
+            if attr in node.attrib:
+                node.attrib[attr] = str(self.to_px(node.attrib[attr]))
+
+        # --- 2. Normalize transform attributes ---
+        if "transform" in node.attrib:
+            node.attrib["transform"] = self.normalize_transform(node.attrib["transform"])
+
+        # --- 3. Normalize style properties ---
+        style = node.style
+        if style:
+            for key, val in list(style.items()):
+                if key in ("stroke-width", "marker-width", "marker-height"):
+                    style[key] = str(self.to_px(val))
+                elif key in ("x", "y", "width", "height"):
+                    style[key] = str(self.to_px(val))
+
+        # --- 4. Normalize marker elements ---
+        for child in node:
+            tag = (child.tag or "").lower()
+            if tag.endswith("marker"):
+                for attr in ("markerWidth", "markerHeight", "refX", "refY"):
+                    if attr in child.attrib:
+                        child.attrib[attr] = str(self.to_px(child.attrib[attr]))
+
+        return node
 
     
     def combine_paths(self, paths):
