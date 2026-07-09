@@ -950,8 +950,11 @@ class GT7Output(inkex.OutputExtension):
                     if v == 0j:
                         v = unit(out_vec)
 
-                    if not pts or not same_point(pts[-1], (prev_end.real, prev_end.imag, pts[-1][2])):
-                        pts.append((prev_end.real, prev_end.imag, angle_from_vec(v)))
+                    if prev_end is not None:
+                        x = prev_end.real
+                        y = prev_end.imag
+                        if not pts or not same_point((pts[-1][0], pts[-1][1]), (x, y)):
+                            pts.append((x, y, angle_from_vec(v)))
 
                 prev_cmd = cmd
                 prev_start = prev_end
