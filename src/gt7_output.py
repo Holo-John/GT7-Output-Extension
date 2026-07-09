@@ -823,79 +823,122 @@ class GT7Output(inkex.OutputExtension):
 
         return 1
 
+
     def extract_vertices(self, el):
         """Return a list of (x, y, angle) tuples for each segment endpoint of a path."""
-        tag = el.tag.lower()
         pts = []
 
-        if tag.endswith("path"):
+        tag = (el.tag or "").lower()
+        if not tag.endswith("path"):
+            return pts
+
+        if not hasattr(el, "path") or el.path is None:
+            return pts
+
+        try:
             path = el.path.to_absolute()
-            prev_x = prev_y = None
-            dx_prev = dy_prev = None
+        except Exception:
+            return pts
+        if path is None:
+            return pts
 
-            for cmd in path:
-                letter = cmd.letter.upper()
+        prev_x: float | None = None
+        prev_y: float | None = None
+        prev_cx: float | None = None
+        prev_cy: float | None = None
+        angle_prev: float | None = None
 
-                # Determine endpoint
-                if hasattr(cmd, "end"):
-                    x, y = cmd.end
-                elif hasattr(cmd, "args") and len(cmd.args) >= 2:
-                    x, y = cmd.args[-2:]
-                else:
-                    continue
+        for cmd in path:
+            letter = cmd.letter.upper()
 
-                # Compute tangent direction
-                if letter == "C":
-                    # args: x1,y1, x2,y2, x,y
+            # M = moveto → first vertex (no tangent yet)
+            if letter == "M":
+                if hasattr(cmd, "args") and len(cmd.args) >= 2:
+                    x, y = cmd.args[:2]
+                    pts.append((x, y, 0.0))
+                    prev_x, prev_y = x, y
+                prev_cx = prev_cy = None
+                continue
+
+            # Determine endpoint
+            if hasattr(cmd, "end"):
+                x, y = cmd.end
+            elif hasattr(cmd, "args") and len(cmd.args) >= 2:
+                x, y = cmd.args[-2:]
+            else:
+                continue
+
+            dx = dy = 0.0
+
+            if letter == "C":
+                # cubic: P0 = prev, P1,P2,P3 = args
+                if prev_x is not None and prev_y is not None:
                     x1, y1, x2, y2, x3, y3 = cmd.args
-                    dx, dy = x3 - x2, y3 - y2
+                    # derivative at t=1: 3*(P3 - P2)
+                    dx, dy = 3 * (x3 - x2), 3 * (y3 - y2)
+                    prev_cx, prev_cy = x2, y2
 
-                elif letter == "S":
-                    # args: x2,y2, x,y
-                    x2, y2, x3, y3 = cmd.args
-                    dx, dy = x3 - x2, y3 - y2
+            elif letter == "S":
+                # smooth cubic: P2,P3 = args, P1 is reflection of prev_cx
+                x2, y2, x3, y3 = cmd.args
+                dx, dy = 3 * (x3 - x2), 3 * (y3 - y2)
+                prev_cx, prev_cy = x2, y2
 
-                elif letter == "Q":
-                    # args: x1,y1, x,y
+            elif letter == "Q":
+                # quadratic: P0 = prev, P1,P2 = args
+                if prev_x is not None and prev_y is not None:
                     x1, y1, x2, y2 = cmd.args
-                    dx, dy = x2 - x1, y2 - y1
+                    # derivative at t=1: 2*(P2 - P1)
+                    dx, dy = 2 * (x2 - x1), 2 * (y2 - y1)
+                    prev_cx, prev_cy = x1, y1
 
-                elif letter == "T":
-                    if prev_x is not None:
-                        dx, dy = x - prev_x, y - prev_y
-                    else:
-                        dx = dy = 0
+            elif letter == "T":
+                # smooth quadratic: reflect previous control point if available
+                if (
+                    prev_x is not None and prev_y is not None and
+                    prev_cx is not None and prev_cy is not None
+                ):
+                    rx = 2 * prev_x - prev_cx
+                    ry = 2 * prev_y - prev_cy
+                    dx, dy = 2 * (x - rx), 2 * (y - ry)
+                elif prev_x is not None and prev_y is not None:
+                    dx, dy = x - prev_x, y - prev_y
+                prev_cx = prev_cy = None
 
-                elif letter in ("L", "H", "V"):
-                    if prev_x is not None:
-                        dx, dy = x - prev_x, y - prev_y
-                    else:
-                        dx = dy = 0
+            elif letter in ("L", "H", "V"):
+                # straight line
+                if prev_x is not None and prev_y is not None:
+                    dx, dy = x - prev_x, y - prev_y
+                prev_cx = prev_cy = None
 
-                else:
-                    dx = dy = 0
+            else:
+                # Z or unsupported → just move endpoint
+                prev_x, prev_y = x, y
+                prev_cx = prev_cy = None
+                continue
 
-                # Normalize tangent vector
-                if dx or dy:
-                    length = math.hypot(dx, dy)
+            # Normalize tangent
+            if dx or dy:
+                length = math.hypot(dx, dy)
+                if length != 0:
                     dx /= length
                     dy /= length
-                    angle = math.degrees(math.atan2(dy, dx))
-                else:
-                    angle = 0.0
+                angle = math.degrees(math.atan2(dy, dx))
+            else:
+                angle = angle_prev if angle_prev is not None else 0.0
 
-                # Ensure continuity (avoid 90°/180° flips)
-                if dx_prev is not None and dy_prev is not None:
-                    dot = dx_prev * dx + dy_prev * dy
-                    if dot < 0:  # tangent reversed
-                        angle = (angle + 180) % 360 - 180
+            # Continuity: only flip if nearly opposite
+            if angle_prev is not None:
+                delta = (angle - angle_prev + 180) % 360 - 180
+                if abs(delta) > 135:
+                    angle = (angle + 180) % 360 - 180
 
-                # Normalize angle to (-180°, 180°)
-                angle = (angle + 180) % 360 - 180
+            # Normalize angle to (-180°, 180°)
+            angle = (angle + 180) % 360 - 180
 
-                pts.append((x, y, angle))
-                prev_x, prev_y = x, y
-                dx_prev, dy_prev = dx, dy
+            pts.append((x, y, angle))
+            prev_x, prev_y = x, y
+            angle_prev = angle
 
         return pts
 

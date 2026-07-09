@@ -1,0 +1,9 @@
+{
+    "typeCheckingMode": "strict",
+    "reportMissingImports": true,
+    "reportUnusedVariable": "warning",
+    "reportUnknownParameterType": "error",
+    "reportUnknownArgumentType": "error",
+    "reportUnknownMemberType": "error",
+    "reportGeneralTypeIssues": "error"
+}
