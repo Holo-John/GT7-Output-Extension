@@ -1324,9 +1324,11 @@ class GT7Output(inkex.OutputExtension):
             tag = self.tag_name(el)
 
             if self.is_geometry(el):
+                self.log(logging.DEBUG, f"Translating node {self.node_str(node)}")
                 self.apply_transform_to_node(el, t)
 
             elif tag in ("linearGradient", "radialGradient"):
+                self.log(logging.DEBUG, f"Translating gradient {self.node_str(node)}")
                 self.apply_translation_to_gradient(el, t)
 
         # Rewrite viewBox to positive coordinates
