@@ -390,7 +390,10 @@ class GT7Output(inkex.OutputExtension):
         return node
 
     def node_str(self, node):
-        return f"<{self.tag_name(node)}, id={node.get("id")}, attrib={dict(node.attrib)}>"
+        if node is None:
+            return "None"
+        else:
+            return f"<{self.tag_name(node)}, id={node.get("id")}, attrib={dict(node.attrib)}>"
 
     def add_node(self, node, parent, index=None):
         tag = node.tag.split('}')[-1]
@@ -1554,10 +1557,7 @@ class GT7Output(inkex.OutputExtension):
                     self.add_node(new_node, parent, idx)
 
                 self.log(logging.DEBUG,
-                    f"[CTP] NEW_NODE: id={new_node.get('id')} "
-                    f"fill-rule={new_node.get('fill-rule')} "
-                    f"style={new_node.get('style')} "
-                    f"subpaths={len(new_node.path)}"
+                    f"[CTP] NEW_NODE: id={new_node.get('id')} {self.node_str(new_node)}"
                 )
 
 
@@ -3224,8 +3224,8 @@ class GT7Output(inkex.OutputExtension):
     
 
     def resolve_clippath(self, cp, transform = Transform()):
-        self.log(logging.DEBUG, f"[CP] resolve_clippath id={cp.get('id')} M={transform}")
-        self.log(logging.DEBUG, f"[CP]   children={[self.tag_name(c) for c in cp]}")
+        self.log(logging.DEBUG, f"[CP] resolve_clippath id={cp.get('id')}, {self.node_str(cp)}, M={transform}")
+        self.log(logging.DEBUG, f"[CP]   children={[self.node_str(c) for c in cp]}")
 
         # accumulate transform on <clipPath>
         if cp.get("transform"):
@@ -3234,24 +3234,36 @@ class GT7Output(inkex.OutputExtension):
             t = Transform()
 
         transform = transform @ t
+        self.log(logging.DEBUG, f"[CP]   accumulated-M={transform}")
 
         # unify children WITHOUT applying their clip-paths
-        parts = [self.resolve_clippath_geometry(child, transform) for child in cp]
+        parts = []
+        for child in cp:
+            self.log(logging.DEBUG, f"[CP]   → resolve child {self.node_str(child)}")
+            geom = self.resolve_clippath_geometry(child, transform)
+
+            self.log(logging.DEBUG, f"[CP]   → child geometry {self.node_str(geom)}")
+            if not geom is None and not self.is_empty_path(geom):
+                parts.append(geom)
+
         geom = self.path_union(parts)
 
         # handle href / xlink:href on <clipPath> itself
         ref, ref_id = self.ref_target(cp)
         if ref is not None:
+            self.log(logging.DEBUG, f"[CP]   clipPath references {self.node_str(cp)}")
+
             ref_geom = self.resolve_clippath(ref, transform)
             geom = self.path_intersection(geom, ref_geom)
 
         geom.attrib.pop("clip-path", None)
 
+        self.log(logging.DEBUG, f"[CP] resolve_clippath DONE {self.node_str(geom)}")
         return geom
 
 
     def resolve_clippath_geometry(self, node, M):
-        self.log(logging.DEBUG, f"[CP]   resolve_clippath_geometry id={node.get('id')} tag={self.tag_name(node)} M={M}")
+        self.log(logging.DEBUG, f"[CP]   resolve_clippath_geometry node={self.node_str(node)} M={M}")
         self.log(logging.DEBUG, f"[CP]   is_geometry={self.is_geometry(node, gt7_supported=True)} clip-path={node.get('clip-path')}")
 
         # accumulate transform
@@ -3259,19 +3271,28 @@ class GT7Output(inkex.OutputExtension):
             t = Transform(node.get("transform"))
             M = M @ t
 
+            self.log(logging.DEBUG, f"[CP]     node-transform={t}")
+            self.log(logging.DEBUG, f"[CP]     accumulated-M={M}")
+
         tag = self.tag_name(node)
 
         # geometry → path
         if self.is_geometry(node, gt7_supported=True):
             geom = self.convert_to_path(node, M)
+            self.log(logging.DEBUG, f"[CP]     converted geometry={self.node_str(geom)}")
 
         # group → unify children
         elif tag == "g":
-            parts = [
-                p for child in node
-                for p in [self.resolve_clippath_geometry(child, M)]
-                if p is not None and not self.is_empty_path(p)
-            ]
+            parts = []
+            for child in node:
+                self.log(logging.DEBUG, f"[CP]       → child {self.node_str(child)}")
+
+                p = self.resolve_clippath_geometry(child, M)
+                self.log(logging.DEBUG, f"[CP]       → resolved group geometry {self.node_str(p)}")
+
+                if not p is None and not self.is_empty_path(p):
+                    parts.append(p)
+
             geom = self.path_union(parts)
 
         else:
@@ -3280,8 +3301,15 @@ class GT7Output(inkex.OutputExtension):
         # apply clip-path to gemoetry (if any)
         cp = self.get_clippath(node)
         if cp is not None:
+            self.log(logging.DEBUG, f"[CP]     applying nested {self.node_str(cp)}")
+
             clip_geom = self.resolve_clippath(cp, M)
+            self.log(logging.DEBUG, f"[CP]     intersection with nested clip-path {self.node_str(clip_geom)}")
+
             geom = self.path_intersection(geom, clip_geom)
+            self.log(logging.DEBUG, f"[CP]     resulting geometry {self.node_str(geom)}")
+
+        self.log(logging.DEBUG, f"[CP]     returning geometry {self.node_str(geom)}") 
 
         return geom
 
@@ -3549,6 +3577,7 @@ class GT7Output(inkex.OutputExtension):
 
         intersection = candidates[-1] if candidates else (out_paths[-1] if out_paths else None)
         if intersection is None:
+            self.log(logging.DEBUG, f"Epty result set - returning empty path")
             return self.empty_path()
 
         new_path = inkex.PathElement()
@@ -3586,7 +3615,8 @@ class GT7Output(inkex.OutputExtension):
 
         union = candidates[-1] if candidates else (out_paths[-1] if out_paths else None)
         if union is None:
-            return None
+            self.log(logging.DEBUG, f"Epty result set - returning empty_path")
+            return self.empty_path()
 
         new_path = inkex.PathElement()
         new_path.set("d", union.get("d"))
@@ -3608,7 +3638,7 @@ class GT7Output(inkex.OutputExtension):
 
         # --- 1. Temporarily remove clip-path attributes ---
         for node in nodes:
-            cp = node.get("clip-path")
+            cp = node.get("clip-path", None)
             if cp is not None:
                 saved_clip_paths[node] = cp
                 node.attrib.pop("clip-path", None)
