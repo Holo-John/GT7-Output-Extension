@@ -2450,7 +2450,7 @@ class GT7Output(inkex.OutputExtension):
 
     # endregion
 
-    # region --- Resolving Gradients ---
+    # region --- Gradients ---
 
     import math
 
@@ -3227,7 +3227,6 @@ class GT7Output(inkex.OutputExtension):
         self.log(logging.DEBUG, f"[CP] resolve_clippath id={cp.get('id')} M={transform}")
         self.log(logging.DEBUG, f"[CP]   children={[self.tag_name(c) for c in cp]}")
 
-
         # accumulate transform on <clipPath>
         if cp.get("transform"):
             t = Transform(cp.get("transform"))
@@ -3246,8 +3245,9 @@ class GT7Output(inkex.OutputExtension):
             ref_geom = self.resolve_clippath(ref, transform)
             geom = self.path_intersection(geom, ref_geom)
 
-        return geom
+        geom.attrib.pop("clip-path", None)
 
+        return geom
 
 
     def resolve_clippath_geometry(self, node, M):
@@ -3285,6 +3285,7 @@ class GT7Output(inkex.OutputExtension):
 
         return geom
 
+
     def get_clippath(self, el):
         """
         Return the <clipPath> element referenced by el's clip-path attribute.
@@ -3309,6 +3310,40 @@ class GT7Output(inkex.OutputExtension):
 
         return cp
 
+    def normalize_clippath_units(self, flattened, cp, shape):
+        """
+        Convert objectBoundingBox clipPaths into userSpaceOnUse by:
+        1. Checking clipPathUnits
+        2. Computing the shape's user-space bounding box
+        3. Building T_bbox = translate(bx,by) ∘ scale(bw,bh)
+        4. Applying T_bbox to the flattened clipPath geometry
+        5. Removing clipPathUnits and transform attributes
+        6. Ensuring the clipPath contains exactly one <path> child
+        """
+
+        # 0. Already userSpaceOnUse → nothing to do
+        units = cp.get("clipPathUnits", "userSpaceOnUse")
+        if units == "userSpaceOnUse":
+           return flattened
+
+        cp_id = cp.get("id", "")
+        self.log(logging.DEBUG,
+                f"[CP] Converting clipPath id={cp_id} from objectBoundingBox → userSpaceOnUse")
+
+        # 1. Compute bounding box in user space
+        T_bbox = self.bbox_transform(shape)
+
+        self.log(logging.DEBUG, f"[CP]   T_bbox={T_bbox}")
+
+        # 2. Apply bbox transform to flattened geometry
+        _, flattened = self.apply_transform_to_node(flattened, T_bbox)
+        
+        cp.attrib.pop("clipPathUnits", None)
+        
+        self.log(logging.DEBUG, f"[CP] clipPath id={cp_id} converted to userSpaceOnUse")
+
+        return flattened
+
 
     def resolve_clippath_for_shape(self, shape):
         """
@@ -3327,6 +3362,10 @@ class GT7Output(inkex.OutputExtension):
             # No geometry → remove clip-path
             shape.attrib.pop("clip-path", None)
             return 0
+        
+        self.log(logging.DEBUG, f"flattened geom = {self.node_str(flattened)}")
+        flattened = self.normalize_clippath_units(flattened, cp, shape)
+        self.log(logging.DEBUG, f"normalized geom = {self.node_str(flattened)}")
 
         # 3. Wrap flattened geometry into a new <clipPath>
         #    (GT7-safe: only <path> children, no forbidden attributes)
@@ -3380,6 +3419,8 @@ class GT7Output(inkex.OutputExtension):
         cp = self.get_clippath(node)
         if cp is None:
             return count
+        
+        self.log(logging.DEBUG, f"Node {self.node_str(node)} has {self.node_str(cp)}")
 
         # Convert shape to path (transform already flattened)
         geom = self.convert_to_path(node, Transform())
@@ -3398,11 +3439,14 @@ class GT7Output(inkex.OutputExtension):
 
         if clip_geom is None:
             # No geometry → fully clipped
+            self.log(logging.DEBUG, f"Clippath {self.node_str(cp)} contains no geometry")
+
             node.attrib.pop("clip-path", None)
             node.set("d", "")
             return count + 1        
         
         # Boolean intersection
+        self.log(logging.DEBUG, f"Clipping {self.node_str(geom)} against clippath {self.node_str(clip_geom)}")
         clipped = self.path_intersection(geom, clip_geom)
         if clipped is None:
             node.attrib.pop("clip-path", None)
@@ -3410,7 +3454,16 @@ class GT7Output(inkex.OutputExtension):
             return count + 1
 
         # Replace geometry
-        node.set("d", clipped.get("d"))
+        tag = self.tag_name(node)
+        if tag == "path":
+            node.set("d", clipped.get("d"))
+        else:
+            self.copy_presentation_attributes(node, clipped, True)
+            parent, idx = self.parent_of(node)
+            self.remove_node(node, parent)
+            self.add_node(clipped, parent, idx)
+            node = clipped
+        self.log(logging.DEBUG, f"Clipped node {self.node_str(node)}")
 
         # Remove clip-path attribute
         node.attrib.pop("clip-path", None)
@@ -3419,7 +3472,7 @@ class GT7Output(inkex.OutputExtension):
     
     # endregion
     
-    # region ---- Remove Pattern ----
+    # region ---- Pattern ----
 
     def pattern_mean_color(self, nodes):
         """
@@ -3543,21 +3596,40 @@ class GT7Output(inkex.OutputExtension):
 
     def compute_tile_size_from_nodes(self, nodes):
         """
-        Compute width & height from the bounding box of the nodes.
-        This makes the rasterizer reusable for ANY geometry, not only patterns.
+        Compute width & height from the union bounding box of the nodes.
+        Temporarily removes clip-path attributes so bounding_box() returns
+        the TRUE geometry bounds instead of the clipped bounds.
         """
 
         bbox = inkex.BoundingBox()
+
+        # Store original clip-path attributes so we can restore them
+        saved_clip_paths = {}
+
+        # --- 1. Temporarily remove clip-path attributes ---
+        for node in nodes:
+            cp = node.get("clip-path")
+            if cp is not None:
+                saved_clip_paths[node] = cp
+                node.attrib.pop("clip-path", None)
+
+        # --- 2. Compute union bounding box ---
         for node in nodes:
             try:
                 bbox += node.bounding_box()
             except Exception:
                 pass  # non-geometry nodes
 
+        # --- 3. Restore clip-path attributes ---
+        for node, cp in saved_clip_paths.items():
+            node.set("clip-path", cp)
+
+        # --- 4. Return safe dimensions ---
         width = bbox.width if bbox.width > 0 else 1.0
         height = bbox.height if bbox.height > 0 else 1.0
 
         return width, height
+
 
 
     def build_svg_for_actions(self, nodes, prefix):

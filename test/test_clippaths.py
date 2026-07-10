@@ -13,7 +13,7 @@ from InkscapeHarness import (
 from gt7_output import GT7Output
 
 
-GRADIENT_SUITE = pathlib.Path("assets/uses")
+GRADIENT_SUITE = pathlib.Path("assets/clippaths")
 
 
 def discover_svg_files():
