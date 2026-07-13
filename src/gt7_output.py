@@ -1460,20 +1460,16 @@ class GT7Output(inkex.OutputExtension):
         style = node.style
         if style:
             for key, val in list(style.items()):
-                if key in ("stroke-width", "marker-width", "marker-height"):
-                    style[key] = str(self.to_px(val))
-                elif key in ("x", "y", "width", "height"):
+                if key in ("stroke-width", "marker-width", "marker-height",
+                        "x", "y", "width", "height"):
                     style[key] = str(self.to_px(val))
 
-        # --- 4. Normalize marker elements ---
+        # --- 4. Normalize children recursively ---
         for child in node:
-            tag = self.tag_name(child)
-            if tag.endswith("marker"):
-                for attr in ("markerWidth", "markerHeight", "refX", "refY"):
-                    if attr in child.attrib:
-                        child.attrib[attr] = str(self.to_px(child.attrib[attr]))
+            self.normalize_units(child)
 
         return node
+
 
     
     def combine_paths(self, paths):
