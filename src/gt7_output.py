@@ -181,7 +181,7 @@ class GT7Output(inkex.OutputExtension):
         pars.add_argument("--rounding_precision", type=int, default=3)
         pars.add_argument("--mesh_divisions", type=int, default=2)
         pars.add_argument("--compress_output", type=inkex.Boolean, default=False) # type: ignore
-
+        pars.add_argument("--autofit_viewbox",  type=inkex.Boolean, default=True) #type: ignore
         
     def effect(self):
         pass
@@ -220,7 +220,7 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.INFO, f"Resolved {clip_count} clip-paths into plain geometry")
             self.log_svg(header="AFTER remove_all_clippaths()")
             
-            self.translate_viewbox()
+            #self.translate_viewbox()
             self.clean_stroke_attributes()
             self.compress_output()
             self.cleanup_defs()
@@ -256,6 +256,7 @@ class GT7Output(inkex.OutputExtension):
             case "rounding_precision": return 3
             case "mesh_divisions": return 2
             case "compress_output": return False
+            case "autofit_viewbox": return True
             case _: 
                 self.log(logging.WARNING, f"Argument --{name} not set")
                 return None
@@ -753,6 +754,9 @@ class GT7Output(inkex.OutputExtension):
         # Anything else → becomes a path
         return self.ellipse_to_path(node, transform=transform)
 
+    def is_identity(self, t):
+        return t.matrix == (1, 0, 0, 1, 0, 0)
+
     # endregion
 
     # region --- Resolve Styles ---
@@ -1119,6 +1123,7 @@ class GT7Output(inkex.OutputExtension):
         orient = marker.get("orient", "auto")
         units  = marker.get("markerUnits", "strokeWidth")
 
+        # --- Rotation ---
         if orient == "auto":
             rot = angle
         elif orient == "auto-start-reverse":
@@ -1126,24 +1131,30 @@ class GT7Output(inkex.OutputExtension):
         else:
             rot = float(orient)
 
-        if units == "strokeWidth":
-            scale = float(el.get("stroke-width", 1))
-        else:
-            scale = 1.0
-            
+        # --- Scaling ---
+        stroke_width = float(el.get("stroke-width", 1.0))
 
-        self.log(logging.DEBUG,f"Scale={scale}, markerUnits={units} for node {self.node_str(el)}")
+        mw = float(marker.get("markerWidth", 1.0))
+        mh = float(marker.get("markerHeight", 1.0))
+
+        vb = marker.get("viewBox", "0 0 3 3").split()
+        vb_w = float(vb[2])
+        vb_h = float(vb[3])
+
+        if units == "strokeWidth":
+            sx = stroke_width * (mw / vb_w)
+            sy = stroke_width * (mh / vb_h)
+        else:  # userSpaceOnUse
+            sx = mw / vb_w
+            sy = mh / vb_h
 
         tr = inkex.Transform()
         tr.add_translate(x, y)
         tr.add_rotate(rot)
-        tr.add_scale(scale)
+        tr.add_scale(sx, sy)
         tr.add_translate(-refX, -refY)
 
-        self.log(logging.DEBUG,f"vertex_tr={tr} for node {self.node_str(marker)}")
-
         return tr
-
 
 
     def expand_marker_instance(self, el, marker, vertex, idx, pos):
@@ -1321,26 +1332,109 @@ class GT7Output(inkex.OutputExtension):
 
     # region --- Viewbox Translation ---
 
-    def compute_viewbox_translation(self):
-        root = self.svg
-        vb = root.get("viewBox")
-        if not vb:
-            return None
+    def viewbox(self):
+        vb = self.svg.get("viewBox")
+        if vb is None:
+        # fallback: use geometry bbox
+            min_x, min_y, max_x, max_y = self.compute_union_bbox()
+            return (min_x, min_y, max_x - min_x, max_y - min_y)
 
-        x, y, w, h = map(float, vb.split())
+        vx, vy, vw, vh = map(float, vb.split())
+        return (vx, vy, vw, vh)
 
-        if x >= 0 and y >= 0:
-            return None
+    def compute_union_bbox(self, nodes=None, origin=None):
+        """
+        Compute the union bounding box of the given nodes.
+        If nodes is None, compute the bbox of all geometry in the SVG.
+        If origin=(0,0), translate nodes so bbox top-left becomes (0,0).
+        Never returns None — always returns a 4-tuple.
+        """
 
-        tx = -x if x < 0 else 0
-        ty = -y if y < 0 else 0
+        # If nodes not provided, use all geometry nodes
+        if nodes is None:
+            nodes = [el for el in self.svg.iter() if self.is_geometry(el)]
 
-        return Transform(f"translate({tx},{ty})")
+        # Fallback for empty node list
+        if not nodes:
+            return (0.0, 0.0, 1.0, 1.0)
+
+        union = inkex.BoundingBox()
+        saved_clip_paths = {}
+
+        # --- 1. Temporarily remove clip-path attributes ---
+        for node in nodes:
+            cp = node.get("clip-path")
+            if cp is not None:
+                saved_clip_paths[node] = cp
+                node.attrib.pop("clip-path", None)
+
+        # --- 2. Compute union bounding box ---
+        for node in nodes:
+            try:
+                union += node.bounding_box()
+            except Exception:
+                pass
+
+        # --- 3. Restore clip-path attributes ---
+        for node, cp in saved_clip_paths.items():
+            node.set("clip-path", cp)
+
+        # If union is empty (no geometry produced a bbox)
+        if union.width == 0 and union.height == 0:
+            return (0.0, 0.0, 1.0, 1.0)
+
+        min_x, min_y, max_x, max_y = union.left, union.top, union.right, union.bottom
+
+        # --- 4. Optional origin shift ---
+        if origin is not None:
+            ox, oy = origin
+            tx = ox - min_x
+            ty = oy - min_y
+
+            t = Transform(f"translate({tx},{ty})")
+
+            for node in nodes:
+                self.apply_transform_to_node(node, t)
+
+            min_x, min_y = ox, oy
+            max_x += tx
+            max_y += ty
+
+        return (min_x, min_y, max_x, max_y)
+
+
+    def compute_viewbox_translation(self, min_x, min_y, v_x, v_y):
+        tx = -min_x
+        ty = -min_y
+
+        if not self.option("autofit_viewbox"):
+            tx = max(0, tx) - v_x
+            ty = max(0, ty) - v_y
+
+        t = Transform(f"translate({tx},{ty})")
+
+        self.log(logging.DEBUG, f"Translation={t}")
+
+        return t
+
 
     def translate_viewbox(self):
         root = self.svg
-        t = self.compute_viewbox_translation()
-        if not t:
+
+        v_x, v_y, v_w, v_h = self.viewbox()
+        min_x, min_y, max_x, max_y = self.compute_union_bbox()
+
+        self.log(logging.DEBUG, f"Viewbox=(x={v_x}, y={v_y}, width={v_w}, height={v_h})")
+
+        if self.option("autofit_viewbox"):
+            width = max_x - min_x
+            height = max_y - min_y
+        else:
+            width = v_w
+            height = v_h            
+
+        t = self.compute_viewbox_translation(min_x, min_y, v_x, v_y)
+        if self.is_identity(t):
             return
 
         for el in root.iter():
@@ -1355,8 +1449,8 @@ class GT7Output(inkex.OutputExtension):
                 self.apply_transform_to_gradient(el, t)
 
         # Rewrite viewBox to positive coordinates
-        x, y, w, h = map(float, root.get("viewBox").split()) # type: ignore
-        root.set("viewBox", f"0 0 {w} {h}")
+        self.log(logging.DEBUG, f"Translated viewbox=(x=0, y=0, width={width}, height={height})")
+        root.set("viewBox", f"0 0 {width} {height}")
 
         self.log(logging.INFO, "Translated viewbox to positive coordinates (geometry + gradients)")
 
@@ -3658,7 +3752,8 @@ class GT7Output(inkex.OutputExtension):
         boolean operations. Works for intersection, union, difference, etc.
         """
 
-        width, height = self.compute_tile_size_from_nodes(nodes)
+        #width, height = self.compute_tile_size_from_nodes(nodes)
+        _, _, width, height = self.compute_union_bbox(nodes, origin=(0,0))
 
         minimal_svg = (
             f'<svg xmlns="http://www.w3.org/2000/svg" '

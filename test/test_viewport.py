@@ -23,7 +23,7 @@ def discover_svg_files():
 
 
 @pytest.mark.parametrize("case_name, svg_path", list(discover_svg_files()))
-def test_linearGradients_case(case_name, svg_path):
+def test_viewport_case(case_name, svg_path):
     print(f"\n=== Running viewport test case: {case_name} ===")
 
     tmpdir = tempfile.mkdtemp()

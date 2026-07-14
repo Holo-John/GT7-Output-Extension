@@ -9,6 +9,9 @@
     <filetypetooltip>SVG export optimized for Gran Turismo 7 Livery Editor</filetypetooltip>
   </output>
 
+  <param name="autofit_viewbox" type="boolean" gui-text="Autofit viewbox to prevent clipping in GT7">
+    true</param>
+
   <param name="strip_alpha" type="boolean" gui-text="Strip alpha from gradients">true</param>
 
   <param name="rounding_precision" type="int" gui-text="Coordinate rounding (decimal places))">3</param>
