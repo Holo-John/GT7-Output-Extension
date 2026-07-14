@@ -1352,7 +1352,7 @@ class GT7Output(inkex.OutputExtension):
 
             elif tag in ("linearGradient", "radialGradient"):
                 self.log(logging.DEBUG, f"Translating gradient {self.node_str(el)}")
-                self.apply_translation_to_gradient(el, t)
+                self.apply_transform_to_gradient(el, t)
 
         # Rewrite viewBox to positive coordinates
         x, y, w, h = map(float, root.get("viewBox").split()) # type: ignore
@@ -1360,43 +1360,6 @@ class GT7Output(inkex.OutputExtension):
 
         self.log(logging.INFO, "Translated viewbox to positive coordinates (geometry + gradients)")
 
-    def apply_translation_to_gradient(self, grad, t):
-        # Extract translation from matrix
-        (a, c, e), (b, d, f) = t.matrix
-        tx, ty = e, f
-
-        # Only shift if gradientUnits is userSpaceOnUse
-        if grad.get("gradientUnits") != "userSpaceOnUse":
-            return
-
-        def shift(attr, is_x):
-            if attr in grad.attrib:
-                try:
-                    v = float(grad.get(attr))
-                    grad.set(attr, str(v + (tx if is_x else ty)))
-                except ValueError:
-                    pass
-
-        # Linear gradient
-        shift("x1", True)
-        shift("y1", False)
-        shift("x2", True)
-        shift("y2", False)
-
-        # Radial gradient
-        shift("cx", True)
-        shift("cy", False)
-        shift("fx", True)
-        shift("fy", False)
-
-        # Compose gradientTransform with translation
-        try:
-            base = Transform(grad.get("gradientTransform") or "")
-        except Exception:
-            base = Transform()
-
-        combined = t @ base
-        grad.set("gradientTransform", str(combined))
 
     # endregion
 

@@ -1,8 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" version="1.1" width="200" height="200" viewBox="0 0 200.0 200.0" id="svg3">
-  <sodipodi:namedview id="namedview3" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25" showgrid="false"/>
-  <defs id="defs2">
-    <linearGradient gradientUnits="userSpaceOnUse" x1="-70" y1="-30" x2="130" y2="170" id="L1" gradientTransform="translate(50, 50)"><stop offset="0" stop-color="#000000"/><stop offset="1" stop-color="#ffffff"/></linearGradient></defs>
-  <rect x="0" y="0" width="200" height="200" fill="#cccccc" id="rect2"/>
-  <rect x="50" y="50" width="100" height="100" fill="url(#L1)" id="rect3"/>
-</svg>
