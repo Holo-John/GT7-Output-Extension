@@ -220,7 +220,7 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.INFO, f"Resolved {clip_count} clip-paths into plain geometry")
             self.log_svg(header="AFTER remove_all_clippaths()")
             
-            #self.translate_viewbox()
+            self.translate_viewbox()
             self.clean_stroke_attributes()
             self.compress_output()
             self.cleanup_defs()
@@ -1342,74 +1342,70 @@ class GT7Output(inkex.OutputExtension):
         vx, vy, vw, vh = map(float, vb.split())
         return (vx, vy, vw, vh)
 
-    def compute_union_bbox(self, nodes=None, origin=None):
+    def compute_union_bbox(self, node=None):
         """
         Compute the union bounding box of the given nodes.
         If nodes is None, compute the bbox of all geometry in the SVG.
-        If origin=(0,0), translate nodes so bbox top-left becomes (0,0).
         Never returns None — always returns a 4-tuple.
         """
 
-        # If nodes not provided, use all geometry nodes
-        if nodes is None:
-            nodes = [el for el in self.svg.iter() if self.is_geometry(el)]
+        if node is None:
+            node = self.svg
 
-        # Fallback for empty node list
-        if not nodes:
-            return (0.0, 0.0, 1.0, 1.0)
-
-        union = inkex.BoundingBox()
-        saved_clip_paths = {}
-
-        # --- 1. Temporarily remove clip-path attributes ---
-        for node in nodes:
-            cp = node.get("clip-path")
-            if cp is not None:
-                saved_clip_paths[node] = cp
-                node.attrib.pop("clip-path", None)
+        # Start with infinities
+        min_x = float("inf")
+        min_y = float("inf")
+        max_x = float("-inf")
+        max_y = float("-inf")
 
         # --- 2. Compute union bounding box ---
-        for node in nodes:
+        for el in node.iter():
             try:
-                union += node.bounding_box()
-            except Exception:
+                if not self.is_geometry(el):
+                    continue
+
+                bb = el.bounding_box(transform=True)
+                self.log(logging.DEBUG, f"bbox={bb} for {self.node_str(el)}")
+
+                # Read-only numeric extents
+                left   = bb.left
+                right  = bb.right
+                top    = bb.top
+                bottom = bb.bottom
+
+                # Stroke expansion
+                #sw = float(el.get("stroke-width", 0) or 0)
+                #if sw > 0:
+                #    half = sw / 2.0
+                #    left   -= half
+                #    right  += half
+                #    top    -= half
+                #    bottom += half
+
+                # Update union extents
+                min_x = min(min_x, left)
+                min_y = min(min_y, top)
+                max_x = max(max_x, right)
+                max_y = max(max_y, bottom)
+               
+
+                self.log(logging.DEBUG, f"viewbox=(min_x={min_x}, min_y={min_y}, max_x={max_x}, max_y={max_y}")
+
+            except Exception as e:
+                self.log(logging.ERROR,str(e))
+                self.log(logging.ERROR,traceback.format_exc())
                 pass
 
-        # --- 3. Restore clip-path attributes ---
-        for node, cp in saved_clip_paths.items():
-            node.set("clip-path", cp)
-
-        # If union is empty (no geometry produced a bbox)
-        if union.width == 0 and union.height == 0:
-            return (0.0, 0.0, 1.0, 1.0)
-
-        min_x, min_y, max_x, max_y = union.left, union.top, union.right, union.bottom
-
-        # --- 4. Optional origin shift ---
-        if origin is not None:
-            ox, oy = origin
-            tx = ox - min_x
-            ty = oy - min_y
-
-            t = Transform(f"translate({tx},{ty})")
-
-            for node in nodes:
-                self.apply_transform_to_node(node, t)
-
-            min_x, min_y = ox, oy
-            max_x += tx
-            max_y += ty
-
-        return (min_x, min_y, max_x, max_y)
+        return (min_x, min_y, max_x - min_x, max_y - min_y)
 
 
-    def compute_viewbox_translation(self, min_x, min_y, v_x, v_y):
-        tx = -min_x
-        ty = -min_y
+    def compute_viewbox_translation(self, v_x, v_y, min_x, min_y):
+        tx = -v_x
+        ty = -v_y
 
-        if not self.option("autofit_viewbox"):
-            tx = max(0, tx) - v_x
-            ty = max(0, ty) - v_y
+        if self.option("autofit_viewbox"):
+            tx -= min_x
+            ty -= min_y
 
         t = Transform(f"translate({tx},{ty})")
 
@@ -1422,18 +1418,15 @@ class GT7Output(inkex.OutputExtension):
         root = self.svg
 
         v_x, v_y, v_w, v_h = self.viewbox()
-        min_x, min_y, max_x, max_y = self.compute_union_bbox()
+        min_x, min_y, width, height = self.compute_union_bbox()
 
         self.log(logging.DEBUG, f"Viewbox=(x={v_x}, y={v_y}, width={v_w}, height={v_h})")
 
-        if self.option("autofit_viewbox"):
-            width = max_x - min_x
-            height = max_y - min_y
-        else:
+        if not self.option("autofit_viewbox"):
             width = v_w
             height = v_h            
 
-        t = self.compute_viewbox_translation(min_x, min_y, v_x, v_y)
+        t = self.compute_viewbox_translation(v_x, v_y, min_x, min_y)
         if self.is_identity(t):
             return
 
