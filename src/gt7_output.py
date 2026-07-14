@@ -197,6 +197,7 @@ class GT7Output(inkex.OutputExtension):
 
             self.preprocess(types_to_path=["text"], unlink_clones=True)
             
+            self.remove_comments()
             self.resolve_styles_to_attributes()
             self.log_svg(header="AFTER resolve_styles_to_attributes()")
             self.normalize_units()
@@ -454,6 +455,28 @@ class GT7Output(inkex.OutputExtension):
         if not isinstance(tag, str):
             return ""
         return tag.split("}")[-1]
+    
+    def is_svg_node(self, node):
+        """
+        True only for real SVG element nodes.
+        Uses tag_name() to filter out comments, text nodes, PIs, and stray objects.
+        """
+
+        # 1. Must have a valid tag name
+        local = self.tag_name(node)
+        if not local:
+            return False
+
+        # 2. Must have attributes (Inkex or lxml element)
+        if not hasattr(node, "attrib"):
+            return False
+
+        # 3. Must not be callable (your earlier bug)
+        if callable(node):
+            return False
+
+        return True
+
 
     def is_expandable_ref(self, ref_el):
         return self.tag_name(ref_el) not in self.SKIP_RESOLVE_TAGS
@@ -1324,11 +1347,11 @@ class GT7Output(inkex.OutputExtension):
             tag = self.tag_name(el)
 
             if self.is_geometry(el):
-                self.log(logging.DEBUG, f"Translating node {self.node_str(node)}")
+                self.log(logging.DEBUG, f"Translating node {self.node_str(el)}")
                 self.apply_transform_to_node(el, t)
 
             elif tag in ("linearGradient", "radialGradient"):
-                self.log(logging.DEBUG, f"Translating gradient {self.node_str(node)}")
+                self.log(logging.DEBUG, f"Translating gradient {self.node_str(el)}")
                 self.apply_translation_to_gradient(el, t)
 
         # Rewrite viewBox to positive coordinates
@@ -2322,16 +2345,23 @@ class GT7Output(inkex.OutputExtension):
             node = self.svg
 
         for el in list(node):
-            tag = el.tag
 
-            if isinstance(tag, str) and tag.endswith("namedview"):
-                continue
-
+            # 1. Remove comment nodes
             if isinstance(el, inkex.etree._Comment):
                 node.remove(el)
                 continue
 
+            # 2. Skip non‑SVG nodes entirely
+            if not self.is_svg_node(el):
+                continue
+
+            # 3. Skip namedview
+            if self.tag_name(el) == "namedview":
+                continue
+
+            # 4. Recurse into real SVG elements
             self.remove_comments(el)
+
 
             
     def remove_redundant_attributes(self, node=None, inherited=None):
@@ -2436,7 +2466,6 @@ class GT7Output(inkex.OutputExtension):
 
 
     def compress_output(self):
-        self.remove_comments()
         self.group_by_common_presentation_attributes()
         self.round_all_coordinates()
         self.remove_non_gt7_attributes()

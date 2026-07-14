@@ -9,6 +9,8 @@ import numpy as np
 import numpy.typing as npt
 from typing import cast, Tuple
 import matplotlib.pyplot as plt
+import sys
+import inspect
 
 INKSCAPE = r"C:\Program Files\Inkscape\bin\inkscape.exe"
 
@@ -25,6 +27,13 @@ def run_extension_on_svg(extension_class, svg_path, strip_alpha=False, rounding_
     """
     Loads an SVG file, runs an OutputExtension, and returns the output SVG as a string.
     """
+
+    print("=== HARNESS INKEX DIAGNOSTICS ===")
+    print("Python executable:", sys.executable)
+    print("inkex loaded from:", inspect.getfile(inkex))
+    print("inkex version:", getattr(inkex, "__version__", "NO VERSION ATTRIBUTE"))
+    print("inkex has Element:", hasattr(inkex, "Element"))
+    print("==================================")
 
     # 1. Load SVG
     doc = inkex.load_svg(svg_path)
