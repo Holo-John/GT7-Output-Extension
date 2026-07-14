@@ -3752,8 +3752,7 @@ class GT7Output(inkex.OutputExtension):
         boolean operations. Works for intersection, union, difference, etc.
         """
 
-        #width, height = self.compute_tile_size_from_nodes(nodes)
-        _, _, width, height = self.compute_union_bbox(nodes, origin=(0,0))
+        width, height = self.compute_tile_size_from_nodes(nodes)
 
         minimal_svg = (
             f'<svg xmlns="http://www.w3.org/2000/svg" '
