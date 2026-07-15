@@ -181,7 +181,6 @@ class GT7Output(inkex.OutputExtension):
         pars.add_argument("--rounding_precision", type=int, default=3)
         pars.add_argument("--mesh_divisions", type=int, default=2)
         pars.add_argument("--compress_output", type=inkex.Boolean, default=False) # type: ignore
-        pars.add_argument("--autofit_viewbox",  type=inkex.Boolean, default=True) #type: ignore
         
     def effect(self):
         pass
@@ -1336,8 +1335,7 @@ class GT7Output(inkex.OutputExtension):
         vb = self.svg.get("viewBox")
         if vb is None:
         # fallback: use geometry bbox
-            min_x, min_y, max_x, max_y = self.compute_union_bbox()
-            return (min_x, min_y, max_x - min_x, max_y - min_y)
+            return 0, 0, 0, 0
 
         vx, vy, vw, vh = map(float, vb.split())
         return (vx, vy, vw, vh)
@@ -1399,13 +1397,9 @@ class GT7Output(inkex.OutputExtension):
         return (min_x, min_y, max_x - min_x, max_y - min_y)
 
 
-    def compute_viewbox_translation(self, v_x, v_y, min_x, min_y):
+    def compute_viewbox_translation(self, v_x, v_y):
         tx = -v_x
         ty = -v_y
-
-        if self.option("autofit_viewbox"):
-            tx -= min_x
-            ty -= min_y
 
         t = Transform(f"translate({tx},{ty})")
 
@@ -1418,15 +1412,10 @@ class GT7Output(inkex.OutputExtension):
         root = self.svg
 
         v_x, v_y, v_w, v_h = self.viewbox()
-        min_x, min_y, width, height = self.compute_union_bbox()
 
         self.log(logging.DEBUG, f"Viewbox=(x={v_x}, y={v_y}, width={v_w}, height={v_h})")
 
-        if not self.option("autofit_viewbox"):
-            width = v_w
-            height = v_h            
-
-        t = self.compute_viewbox_translation(v_x, v_y, min_x, min_y)
+        t = self.compute_viewbox_translation(v_x, v_y)
         if self.is_identity(t):
             return
 
@@ -1441,9 +1430,10 @@ class GT7Output(inkex.OutputExtension):
                 self.log(logging.DEBUG, f"Translating gradient {self.node_str(el)}")
                 self.apply_transform_to_gradient(el, t)
 
-        # Rewrite viewBox to positive coordinates
-        self.log(logging.DEBUG, f"Translated viewbox=(x=0, y=0, width={width}, height={height})")
-        root.set("viewBox", f"0 0 {width} {height}")
+        # Rewrite viewBox to positive coordinates (if a valid viewbox was defined before)
+        if v_w > 0 and v_h > 0:
+            self.log(logging.DEBUG, f"Translated viewbox=(x=0, y=0, width={v_w}, height={v_h})")
+            root.set("viewBox", f"0 0 {v_w} {v_h}")
 
         self.log(logging.INFO, "Translated viewbox to positive coordinates (geometry + gradients)")
 
