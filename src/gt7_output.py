@@ -47,6 +47,8 @@ class GT7Output(inkex.OutputExtension):
     
     # region constants
 
+    NAME_START = re.compile(r"[A-Za-z_]")
+
     GT7_ATTRS = {
         "id",
         "d",
@@ -346,24 +348,31 @@ class GT7Output(inkex.OutputExtension):
         return candidate
 
     def url_to_id(self, url):
+        
         if not url:
             return None
 
         url = url.strip()
 
-        # Case 1: url(#foo)
+        # Extract raw reference target
         if url.startswith("url(") and url.endswith(")"):
-            inside = url[4:-1].strip()   # → "#foo"
+            inside = url[4:-1].strip()
             if inside.startswith("#"):
-                return inside[1:]        # → "foo"
-            return inside                # fallback
+                candidate = inside[1:]
+            else:
+                candidate = inside
 
-        # Case 2: #foo
-        if url.startswith("#"):
-            return url[1:]
+        elif url.startswith("#"):
+            candidate = url[1:]
 
-        # Case 3: plain "foo" (not valid for markers, but safe fallback)
-        return url
+        else:
+            candidate = url
+
+        # Validate candidate as a legal SVG ID
+        if candidate and self. NAME_START.match(candidate[0]):
+            return candidate
+
+        return None
     
     def ref_target(self, el, attr="href"):
         href = el.get(attr) or el.get(f"{{{self.XLINK_NS}}}{attr}")
