@@ -3804,6 +3804,14 @@ class GT7Output(inkex.OutputExtension):
 
     
     def path_union(self, paths):
+        if len(paths) == 1:
+            # Return a *copy* so callers can mutate safely
+            single = paths[0]
+            new_path = inkex.PathElement()
+            new_path.set("d", single.get("d"))
+            self.copy_presentation_attributes(single, new_path)
+            return new_path
+
         doc, ids = self.build_svg_for_actions(paths, prefix="u")
 
         root = doc.getroot()
