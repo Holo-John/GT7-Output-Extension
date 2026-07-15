@@ -47,7 +47,13 @@ class GT7Output(inkex.OutputExtension):
     
     # region constants
 
-    NAME_START = re.compile(r"[A-Za-z_]")
+    SVG_IDENTIFIER_START = re.compile(r"[A-Za-z_]")
+    CSS_RULE = re.compile(
+        r"(?P<selectors>[^{]+)\s*\{\s*(?P<body>[^}]*)\}",
+    re.DOTALL
+    )
+
+
 
     GT7_ATTRS = {
         "id",
@@ -199,6 +205,7 @@ class GT7Output(inkex.OutputExtension):
             self.preprocess(types_to_path=["text"], unlink_clones=True)
             
             self.remove_comments()
+            self.resolve_css_classes()
             self.resolve_styles_to_attributes()
             self.log_svg(header="AFTER resolve_styles_to_attributes()")
             self.normalize_units()
@@ -257,7 +264,6 @@ class GT7Output(inkex.OutputExtension):
             case "rounding_precision": return 3
             case "mesh_divisions": return 2
             case "compress_output": return False
-            case "autofit_viewbox": return True
             case _: 
                 self.log(logging.WARNING, f"Argument --{name} not set")
                 return None
@@ -369,7 +375,7 @@ class GT7Output(inkex.OutputExtension):
             candidate = url
 
         # Validate candidate as a legal SVG ID
-        if candidate and self. NAME_START.match(candidate[0]):
+        if candidate and self. SVG_IDENTIFIER_START.match(candidate[0]):
             return candidate
 
         return None
@@ -768,6 +774,116 @@ class GT7Output(inkex.OutputExtension):
     # endregion
 
     # region --- Resolve Styles ---
+
+    def parse_css_rules(self):
+        rules = {}
+
+        # Find all <style> elements
+        for style_elem in self.svg.xpath("//svg:style", namespaces=inkex.NSS):
+            css = style_elem.text or ""
+            block_rules = self.parse_css_block(css)
+            rules.update(block_rules)
+
+        self.log(logging.DEBUG, f"CSS rules = {rules}")
+
+        return rules
+
+
+    def parse_css_block(self, css):
+        rules = {}
+
+        for match in self.CSS_RULE.finditer(css):
+            # Safety guard
+            if not match:
+                self.log(logging.WARNING,f"Ignoring CSS entry {css}")
+                continue
+
+            selector_text = match.group("selectors").strip()
+            body = match.group("body").strip()
+
+            # Multiple selectors: ".a, .b"
+            selectors = [s.strip() for s in selector_text.split(",")]
+
+            props = {}
+            for decl in body.split(";"):
+                decl = decl.strip()
+                if ":" not in decl:
+                    continue
+                prop, val = decl.split(":", 1)
+                props[prop.strip()] = val.strip()
+
+            for sel in selectors:
+                self.log(logging.DEBUG, f"Found CSS rule {sel} -> ({props})")
+                rules[sel] = props
+
+        return rules
+
+
+    def classify_css_rules(self, rules):
+        class_rules = {}
+        element_rules = {}
+        id_rules = {}
+
+        for selector, props in rules.items():
+            if selector.startswith("."):
+                class_rules[selector[1:]] = props
+            elif selector.startswith("#"):
+                id_rules[selector[1:]] = props
+            else:
+                # element selector: rect, path, circle, etc.
+                element_rules[selector] = props
+
+        self.log(logging.DEBUG, f"Class rules = {class_rules}")
+        self.log(logging.DEBUG, f"Element rules = {element_rules}")
+        self.log(logging.DEBUG, f"ID rules = {id_rules}")
+
+        return class_rules, element_rules, id_rules
+
+
+    def resolve_css_classes(self):
+        raw_rules = self.parse_css_rules()
+        class_rules, element_rules, id_rules = self.classify_css_rules(raw_rules)
+
+        count = 0
+
+        for elem in self.svg.iter():
+            tag = self.tag_name(elem)
+
+            # 1. Element selectors
+            if tag in element_rules:
+                self.log(logging.DEBUG, f"Matched element selector -> {element_rules[tag]}")
+                for prop, value in element_rules[tag].items():
+                    if prop in self.PRESENTATION_ATTRS:
+                        elem.set(prop, value)
+                        count += 1
+
+            # 2. Class selectors
+            cls = elem.get("class")
+            if cls:
+                for class_name in cls.split():
+                    if class_name in class_rules:
+                        self.log(logging.DEBUG, f"Matched class selector -> {class_rules[class_name]}")
+
+                        for prop, value in class_rules[class_name].items():
+                            if prop in self.PRESENTATION_ATTRS:
+                                elem.set(prop, value)
+                                count += 1
+                del elem.attrib["class"]
+
+            # 3. ID selectors
+            elem_id = elem.get("id")
+            if elem_id and elem_id in id_rules:
+                self.log(logging.DEBUG, f"Matched ID selector -> {id_rules[elem_id]}")
+
+                for prop, value in id_rules[elem_id].items():
+                    if prop in self.PRESENTATION_ATTRS:
+                        elem.set(prop, value)
+                        count += 1
+
+        if count:
+            self.log(logging.INFO, f"Resolved {count} CSS class/element/id styles")
+
+
 
     def resolve_styles_to_attributes(self):
         count = 0
@@ -2482,21 +2598,41 @@ class GT7Output(inkex.OutputExtension):
 
     def remove_non_gt7_elements(self):
         """
-        Remove editor-specific and unsafe elements/attributes:
-        - <script>
-        - Inkscape/Sodipodi elements
-        - Inkscape/Sodipodi attributes
+        Remove all elements forbidden by GT7 except those already handled earlier:
+        - Remove: <script>, <style>, <foreignObject>, <switch>,
+                <metadata>, <desc>, <title>, <image>,
+                <iframe>, <audio>, <video>,
+                <animate>, <animateTransform>, <set>
+        - Skip:   <pattern>, <mask>, <filter>, <clipPath>, <use>
+        - Also remove Inkscape/Sodipodi namespaced elements + attributes
         """
 
-        # --- 1. Remove all <script> elements ---
+        forbidden_tags = {
+            "script",
+            "style",
+            "foreignObject",
+            "switch",
+            "metadata",
+            "desc",
+            "title",
+            "image",
+            "iframe",
+            "audio",
+            "video",
+            "animate",
+            "animateTransform",
+            "set",
+        }
+
+        # --- 1. Remove forbidden elements ---
         for el in list(self.svg.iter()):
             tag = self.tag_name(el)
-            if tag == "script":
+            if tag in forbidden_tags:
                 parent = el.getparent()
                 if parent is not None:
                     parent.remove(el)
 
-        # --- 2. Remove editor-specific elements (namespaced) ---
+        # --- 2. Remove editor-specific namespaced elements ---
         for el in list(self.svg.iter()):
             tag = self.tag_name(el)
             if tag.startswith("{http://www.inkscape.org/namespaces/inkscape}") or \
@@ -2505,13 +2641,14 @@ class GT7Output(inkex.OutputExtension):
                 if parent is not None:
                     parent.remove(el)
 
-        # --- 3. Strip editor-specific attributes from remaining elements ---
+        # --- 3. Strip editor-specific attributes ---
         for el in self.svg.iter():
             attribs = list(el.attrib.items())
             for name, _ in attribs:
                 if name.startswith("{http://www.inkscape.org/namespaces/inkscape}") or \
                 name.startswith("{http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"):
                     del el.attrib[name]
+
 
 
     def compress_output(self):
