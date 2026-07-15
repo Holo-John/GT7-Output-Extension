@@ -1013,37 +1013,146 @@ class GT7Output(inkex.OutputExtension):
 
     # region --- Marker ---
 
+    def presentation_signature(self, el):
+        """
+        Return a tuple representing all presentation attributes of an element.
+        Used for grouping paths by identical styling.
+        """
+
+        return tuple((attr, el.get(attr)) for attr in sorted(self.PRESENTATION_ATTRS))
+
+    def group_by_presentation(self, elements):
+        """
+        Group elements by identical presentation attributes.
+        Returns: dict { signature: [elements...] }
+        """
+
+        groups = {}
+        for el in elements:
+            sig = self.presentation_signature(el)
+            groups.setdefault(sig, []).append(el)
+        return groups
+
+
     def remove_pattern_for_element(self, el):
         """
-        Replace pattern fill with mean color and remove the pattern reference.
-        Returns number of patterns removed (0 or 1).
+        Replace pattern fill with actual geometry instead of mean color.
+        GT7-safe: uses clipPath + flattened geometry.
         """
 
         # Resolve referenced element
-        ref, ref_id = self.ref_target(el, "fill")
-        if ref is None:
+        pattern, pattern_id = self.ref_target(el, "fill")
+        if pattern is None or self.tag_name(pattern) != "pattern":
             return 0
 
-        # Only handle <pattern>, ignore other references
-        tag = self.tag_name(ref)
-        if tag != "pattern":
-            return 0
+        nodes = list(pattern.iterchildren())
+        if not nodes:
+            el.set("fill", "none")
+            return 1
 
-        # Collect geometry nodes inside the pattern
-        nodes = list(ref.iterchildren())
+        # --- 1. Get pattern tile size ---
+        px = float(pattern.get("x", 0))
+        py = float(pattern.get("y", 0))
+        pw = float(pattern.get("width", 0))
+        ph = float(pattern.get("height", 0))
 
-        # Compute mean color
-        mean_color = self.pattern_mean_color(nodes) if nodes else "#000000"
+        if pw <= 0 or ph <= 0:
+            el.set("fill", "none")
+            return 1
 
-        # Replace fill with solid color
-        el.set("fill", mean_color)
+        # --- 2. Get target bounding box ---
+        bbox = el.bounding_box()
+        cols = math.ceil(bbox.width / pw)
+        rows = math.ceil(bbox.height / ph)
 
-        # Logging
-        self.log(logging.WARNING,
-                f"Replaced pattern '{ref_id}' with fill '{mean_color}' "
-                f"on {self.node_str(el)}")
+        # --- 3. Collect expanded pattern geometry grouped by presentation ---
+        
+
+        # --- PATTERN transform ---
+        raw_pt = pattern.get("patternTransform")
+        pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
+
+        pattern_groups = {}
+
+        for r in range(rows):
+            for c in range(cols):
+                dx = bbox.left + c * pw - px
+                dy = bbox.top + r * ph - py
+
+                for node in nodes:
+                    clone = self.convert_to_path(node)
+                    if clone is None:
+                        continue
+
+                    self.log(logging.DEBUG, f"Tile: dx={dx}, dy={dy}, path={self.node_str(clone)}")
+
+                    raw_local = node.get("transform")
+                    local_t = inkex.Transform(raw_local) if raw_local else inkex.Transform()
+
+                    tile_t = inkex.Transform().add_translate(dx, dy)
+                    full_t = tile_t @ pattern_t @ local_t
+
+                    self.apply_transform_to_node(clone, full_t)
+
+                    self.log(logging.DEBUG, f"Transformed tile: full_t={full_t}, path={self.node_str(clone)}")
+
+                    sig = self.presentation_signature(clone)
+                    pattern_groups.setdefault(sig, []).append(clone)
+
+        if not pattern_groups:
+            el.set("fill", "none")
+            return 1
+
+        # --- 4. Union each group separately (preserves colors) ---
+        merged_paths = []
+        for sig, paths in pattern_groups.items():
+            #merged = self.path_union(paths)
+            merged = self.combine_paths(paths)
+
+            if merged is None:
+                continue
+
+            # restore presentation attributes
+            for attr, value in sig:
+                if value is not None:
+                    merged.set(attr, value)
+
+            self.log(logging.DEBUG, f"Merged tiles: path={self.node_str(merged)}")
+
+            merged_paths.append(merged)
+
+        # --- 5. Clip to target shape ---
+        clip = inkex.ClipPath()
+        clip.attrib.pop("id", None)
+        clip.append(copy.deepcopy(el))
+
+        defs = self.ensure_defs()
+        self.add_node(clip, defs)
+        clip_id = clip.get("id")
+
+        raw_el = el.get("transform")
+        el_t = inkex.Transform(raw_local) if raw_el else inkex.Transform()
+
+        parent, idx = self.parent_of(el)
+
+        # --- 6. Insert merged geometry before element ---
+        for path in merged_paths:
+            path.set("clip-path", f"url(#{clip_id})")
+            self.apply_transform_to_node(path, el_t)
+            self.add_node(path, parent, idx)
+
+        # --- 7. Remove pattern reference from element ---
+        el.set("fill", "none")
+
+        self.log(
+            logging.DEBUG,
+            f"Expanded pattern '{pattern_id}' into geometry on {self.node_str(el)}",
+        )
 
         return 1
+
+
+
 
 
     def extract_vertices(self, el):
