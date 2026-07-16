@@ -224,6 +224,10 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.INFO, f"Resolved {transform_count} transformations into plain geometry")
             self.log_svg(header="AFTER apply_all_transforms()")
 
+            pattern_count = self.remove_all_patterns()
+            self.log(logging.INFO, f"Resolved {pattern_count} patterns into plain geometry")
+            self.log_svg(header="AFTER remove_all_patterns()")
+
             clip_count = self.remove_all_clippaths()
             self.log(logging.INFO, f"Resolved {clip_count} clip-paths into plain geometry")
             self.log_svg(header="AFTER remove_all_clippaths()")
@@ -497,9 +501,14 @@ class GT7Output(inkex.OutputExtension):
         return self.tag_name(ref_el) not in self.SKIP_RESOLVE_TAGS
 
     def copy_presentation_attributes(self, src, dst, override=True):
-        for attr in self.PRESENTATION_ATTRS:
-            if attr in src.attrib and (override or attr not in dst.attrib):
-                dst.set(attr, src.get(attr))
+        if isinstance(dst, list):
+            for el in dst:
+                self.copy_presentation_attributes(src, el, override=override)
+                
+        elif self.is_svg_node(dst):                
+            for attr in self.PRESENTATION_ATTRS:
+                if attr in src.attrib and (override or attr not in dst.attrib):
+                    dst.set(attr, src.get(attr))
 
                 
     def parse_number(self, value):
@@ -1013,148 +1022,6 @@ class GT7Output(inkex.OutputExtension):
 
     # region --- Marker ---
 
-    def presentation_signature(self, el):
-        """
-        Return a tuple representing all presentation attributes of an element.
-        Used for grouping paths by identical styling.
-        """
-
-        return tuple((attr, el.get(attr)) for attr in sorted(self.PRESENTATION_ATTRS))
-
-    def group_by_presentation(self, elements):
-        """
-        Group elements by identical presentation attributes.
-        Returns: dict { signature: [elements...] }
-        """
-
-        groups = {}
-        for el in elements:
-            sig = self.presentation_signature(el)
-            groups.setdefault(sig, []).append(el)
-        return groups
-
-
-    def remove_pattern_for_element(self, el):
-        """
-        Replace pattern fill with actual geometry instead of mean color.
-        GT7-safe: uses clipPath + flattened geometry.
-        """
-
-        # Resolve referenced element
-        pattern, pattern_id = self.ref_target(el, "fill")
-        if pattern is None or self.tag_name(pattern) != "pattern":
-            return 0
-
-        nodes = list(pattern.iterchildren())
-        if not nodes:
-            el.set("fill", "none")
-            return 1
-
-        # --- 1. Get pattern tile size ---
-        px = float(pattern.get("x", 0))
-        py = float(pattern.get("y", 0))
-        pw = float(pattern.get("width", 0))
-        ph = float(pattern.get("height", 0))
-
-        if pw <= 0 or ph <= 0:
-            el.set("fill", "none")
-            return 1
-
-        # --- 2. Get target bounding box ---
-        bbox = el.bounding_box()
-        cols = math.ceil(bbox.width / pw)
-        rows = math.ceil(bbox.height / ph)
-
-        # --- 3. Collect expanded pattern geometry grouped by presentation ---
-        
-
-        # --- PATTERN transform ---
-        raw_pt = pattern.get("patternTransform")
-        pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
-
-        pattern_groups = {}
-
-        for r in range(rows):
-            for c in range(cols):
-                dx = bbox.left + c * pw - px
-                dy = bbox.top + r * ph - py
-
-                for node in nodes:
-                    clone = self.convert_to_path(node)
-                    if clone is None:
-                        continue
-
-                    self.log(logging.DEBUG, f"Tile: dx={dx}, dy={dy}, path={self.node_str(clone)}")
-
-                    raw_local = node.get("transform")
-                    local_t = inkex.Transform(raw_local) if raw_local else inkex.Transform()
-
-                    tile_t = inkex.Transform().add_translate(dx, dy)
-                    full_t = tile_t @ pattern_t @ local_t
-
-                    self.apply_transform_to_node(clone, full_t)
-
-                    self.log(logging.DEBUG, f"Transformed tile: full_t={full_t}, path={self.node_str(clone)}")
-
-                    sig = self.presentation_signature(clone)
-                    pattern_groups.setdefault(sig, []).append(clone)
-
-        if not pattern_groups:
-            el.set("fill", "none")
-            return 1
-
-        # --- 4. Union each group separately (preserves colors) ---
-        merged_paths = []
-        for sig, paths in pattern_groups.items():
-            #merged = self.path_union(paths)
-            merged = self.combine_paths(paths)
-
-            if merged is None:
-                continue
-
-            # restore presentation attributes
-            for attr, value in sig:
-                if value is not None:
-                    merged.set(attr, value)
-
-            self.log(logging.DEBUG, f"Merged tiles: path={self.node_str(merged)}")
-
-            merged_paths.append(merged)
-
-        # --- 5. Clip to target shape ---
-        clip = inkex.ClipPath()
-        clip.attrib.pop("id", None)
-        clip.append(copy.deepcopy(el))
-
-        defs = self.ensure_defs()
-        self.add_node(clip, defs)
-        clip_id = clip.get("id")
-
-        raw_el = el.get("transform")
-        el_t = inkex.Transform(raw_local) if raw_el else inkex.Transform()
-
-        parent, idx = self.parent_of(el)
-
-        # --- 6. Insert merged geometry before element ---
-        for path in merged_paths:
-            path.set("clip-path", f"url(#{clip_id})")
-            self.apply_transform_to_node(path, el_t)
-            self.add_node(path, parent, idx)
-
-        # --- 7. Remove pattern reference from element ---
-        el.set("fill", "none")
-
-        self.log(
-            logging.DEBUG,
-            f"Expanded pattern '{pattern_id}' into geometry on {self.node_str(el)}",
-        )
-
-        return 1
-
-
-
-
-
     def extract_vertices(self, el):
         pts = []
 
@@ -1528,7 +1395,7 @@ class GT7Output(inkex.OutputExtension):
                     clip_count += self.resolve_clippath_for_shape(el)
                     filter_count += self.remove_filter_for_element(el)
                     mask_count += self.remove_mask_for_element(el)
-                    pattern_count += self.remove_pattern_for_element(el)
+                    pattern_count += self.resolve_pattern_for_shape(el)
                     marker_count += self.resolve_marker_for_element(el)
 
                 case "clippath":
@@ -1537,7 +1404,7 @@ class GT7Output(inkex.OutputExtension):
                 case _:
                     filter_count += self.remove_filter_for_element(el)
                     mask_count += self.remove_mask_for_element(el)
-                    pattern_count += self.remove_pattern_for_element(el)
+                    pattern_count += self.resolve_pattern_for_shape(el)
 
 
         if grad_count:
@@ -1553,7 +1420,7 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.INFO, f"Removed {mask_count} masks")
 
         if pattern_count:
-            self.log(logging.INFO, f"Replaced {pattern_count} patterns with solid fill color")
+            self.log(logging.INFO, f"Resolved {pattern_count} patterns")
         
         if marker_count:
             self.log(logging.INFO, f"Resolved {marker_count} markers")
@@ -2267,8 +2134,6 @@ class GT7Output(inkex.OutputExtension):
         # Modern inkex root access
         if node is None:
             node = self.svg
-            self.cleanup_defs()
-            self.log_defs()
 
         if parent_transform is None:
             parent_transform = Transform()
@@ -2318,6 +2183,8 @@ class GT7Output(inkex.OutputExtension):
         return count
         
     def flatten_group(self, g):
+        self.log(logging.DEBUG, f"Flattening {self.node_str(g)}")
+
         # Parse group transform safely
         try:
             g_transform = Transform(g.get("transform"))
@@ -3542,6 +3409,348 @@ class GT7Output(inkex.OutputExtension):
 
     # endregion
 
+    # region --- Pattern ---
+
+    def normalize_units_for_pattern(self, geoms, pat, shape):
+        """
+        Convert objectBoundingBox patternContentUnits into userSpaceOnUse by:
+        1. Checking patternContentUnits
+        2. Computing the shape's user-space bounding box
+        3. Building T_bbox = translate(bx,by) ∘ scale(bw,bh)
+        4. Applying T_bbox to each geometry node
+        5. Removing patternContentUnits attribute
+        """
+
+        units = pat.get("patternContentUnits", "userSpaceOnUse")
+        if units == "userSpaceOnUse":
+            return geoms
+
+        pat_id = pat.get("id", "")
+        self.log(logging.DEBUG,
+                f"[PAT] Converting pattern id={pat_id} from objectBoundingBox → userSpaceOnUse")
+
+        # 1. Compute bounding box transform in user space
+        T_bbox = self.bbox_transform(shape)
+        self.log(logging.DEBUG, f"[PAT]   T_bbox={T_bbox}")
+
+        # 2. Apply bbox transform to each geometry node
+        normalized = []
+        for g in geoms:
+            _, g2 = self.apply_transform_to_node(g, T_bbox)
+            normalized.append(g2)
+
+        # 3. Remove the attribute
+        pat.attrib.pop("patternContentUnits", None)
+
+        self.log(logging.DEBUG,
+                f"[PAT] pattern id={pat_id} converted to userSpaceOnUse")
+
+        return normalized
+
+
+    def resolve_pattern_for_shape(self, shape):
+        """
+        Resolve the <pattern> referenced by 'shape' into a list of flattened
+        geometry nodes in pure userSpace, ready for tiling.
+        """
+
+        # 1. Get structural <pattern> element
+        pattern, pattern_id = self.ref_target(shape, "fill")
+        if pattern is None or self.tag_name(pattern) != "pattern":
+            return 0
+
+        self.log(logging.DEBUG, f"[PAT] resolving {self.node_str(pattern)}")
+
+        # 2. Resolve pattern geometry (flatten transforms, groups, href)
+        geoms = self.resolve_pattern(pattern, Transform())
+        if not geoms:
+            self.log(logging.DEBUG, f"[PAT] no geometry in {self.node_str(pattern)}")
+            # No geometry → remove pattern
+            shape.attrib.pop("fill", None)
+            return 0
+
+        # 3. Normalize pattern units (patternUnits + patternContentUnits)
+        geoms = self.normalize_units_for_pattern(geoms, pattern, shape)
+        
+        self.log(logging.DEBUG, f"[PAT] normalized pattern geometry count={len(geoms)}")
+
+        svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
+        pattern_new = inkex.etree.Element(f"{{{svg_ns}}}pattern")
+
+        # copy tiling attributes from original pattern
+        for attr in ("x", "y", "width", "height", "patternUnits", "patternTransform"):
+            if attr in pattern.attrib:
+                pattern_new.set(attr, pattern.get(attr))
+
+        for g in geoms:
+            pattern_new.append(g)
+        
+        pattern_new.attrib.pop("id", None)
+
+        defs = self.ensure_defs()
+        pattern_clone = self.add_node(pattern_new, defs)
+        new_id = pattern_clone.get("id")
+
+        shape.set("fill", f"url(#{new_id})")
+
+        return 1
+
+    def add_geom_preserving_zorder(self, parts, geom):
+        # flatten input
+        new_items = geom if isinstance(geom, list) else [geom]
+
+        for item in new_items:
+            sig_new = self.presentation_signature(item)
+
+            if parts:
+                tail = parts[-1]
+                sig_tail = self.presentation_signature(tail)
+
+                # merge only if presentation signatures match
+                if sig_new == sig_tail:
+                    self.log(logging.DEBUG,f"Merging {self.node_str(item)}")
+                    merged = self.combine_paths([tail, item])
+
+                    # restore presentation attributes from tail
+                    self.copy_presentation_attributes(tail, merged, override=True)
+                    
+                    parts[-1] = merged
+                    continue
+
+            # otherwise append normally
+            self.log(logging.DEBUG,f"Appending {self.node_str(item)}")
+            parts.append(item)
+
+
+    def resolve_pattern(self, pattern, transform=Transform()):
+        """
+        Flatten pattern geometry into userSpace:
+        - accumulate transforms
+        - flatten groups
+        - convert geometry to paths
+        - follow href chains
+        - return list of geometry nodes (no union!)
+        """
+
+        self.log(logging.DEBUG, f"[PAT] resolve {self.node_str(pattern)} transform={transform}")
+
+        parts = []
+
+        # resolve children
+        for child in pattern:
+            geom = self.resolve_pattern_geometry(child, transform)
+            if geom is None:
+                continue
+
+            self.log(logging.DEBUG,f"Adding {str(geom)}")
+            self.add_geom_preserving_zorder(parts, geom)
+
+        return parts
+
+    def resolve_pattern_geometry(self, node, M):
+        self.log(logging.DEBUG, f"[PAT] resolve_pattern_geometry node={self.node_str(node)} M={M}")
+
+        # accumulate transform on child
+        if node.get("transform"):
+            t = Transform(node.get("transform"))
+            M = M @ t
+            self.log(logging.DEBUG, f"[PAT] node-transform={t}")
+            self.log(logging.DEBUG, f"[PAT] accumulated-M={M}")
+
+        tag = self.tag_name(node)
+
+        # geometry → path
+        if self.is_geometry(node, gt7_supported=True):
+            geom = self.convert_to_path(node, M)
+            if not geom is None:
+                geom.attrib.pop("transform", None)
+
+                # Remove nested patterns
+                pattern, id = self.ref_target(geom, "fill")
+                if not pattern is None and self.tag_name(pattern) == "pattern":
+                    self.log(logging.WARNING, f"Nested pattern {id} replaced using black fill fallback")
+                    geom.set("fill", "black")
+            
+            return geom
+
+        # group → flatten children
+        if tag == "g":
+            parts = []
+            for child in node:
+                p = self.resolve_pattern_geometry(child, M)
+                if p is None:
+                    continue
+                
+                self.copy_presentation_attributes(node, p, override=False)
+
+                if isinstance(p, list):
+                    parts.extend(p)
+                else:
+                    parts.append(p)
+            return parts
+
+        # unsupported → ignore
+        return None
+
+
+    def remove_all_patterns(self, node=None):
+        """
+        Post-order pass to resolve pattern fills into geometry.
+        For each geometry node with fill="url(#id)" referencing a <pattern>,
+        expand the pattern into clipped geometry and clear the fill.
+        """
+
+        if node is None:
+            node = self.svg
+
+        tag = self.tag_name(node)
+
+        # Skip paint servers and non-geometry
+        if tag in ("linearGradient", "radialGradient", "filter", "marker", "stop"):
+            return 0
+
+        count = 0
+
+        # 1. Recurse
+        for child in list(node):
+            count += self.remove_all_patterns(child)
+
+        # 2. Process this node
+        resolved = self.pattern_to_geometry(node)
+        if resolved:
+            # only clear fill if we actually expanded a pattern
+            node.set("fill", "none")
+
+        return count + resolved
+
+    
+    def presentation_signature(self, el):
+        """
+        Return a tuple representing all presentation attributes of an element.
+        Used for grouping paths by identical styling.
+        """
+
+        return tuple((attr, el.get(attr)) for attr in sorted(self.PRESENTATION_ATTRS))
+
+
+    def pattern_to_geometry(self, el):
+        """
+        Replace pattern fill with actual geometry.
+        For each pattern child, tile it over the element's bbox,
+        union tiles per presentation signature, then clip against el.
+        """
+
+        # 0. Resolve referenced pattern
+        pattern, pattern_id = self.ref_target(el, "fill")
+        if pattern is None or self.tag_name(pattern) != "pattern":
+            return 0
+
+        nodes = list(pattern.iterchildren())
+        if not nodes:
+            el.set("fill", "none")
+            return 1
+        
+        self.log(logging.DEBUG, f"Replacing pattern {self.node_str(pattern)}")
+
+        # 1. Pattern tile size
+        px = float(pattern.get("x", 0))
+        py = float(pattern.get("y", 0))
+        pw = float(pattern.get("width", 0))
+        ph = float(pattern.get("height", 0))
+
+        if pw <= 0 or ph <= 0:
+            self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, invalid width/height: with={pw}, height={ph}")
+            el.set("fill", "none")
+            return 1
+
+        # 2. Target bbox → tile grid
+        bbox = el.bounding_box()
+        cols = math.ceil(bbox.width / pw)
+        rows = math.ceil(bbox.height / ph)
+
+        # 3. Pattern transform
+        raw_pt = pattern.get("patternTransform")
+        pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
+
+        # 4. Collect tiles grouped by presentation
+        pattern_groups = {}
+
+        for shape_index, node in enumerate(nodes):
+            # one group per original pattern child
+            shape_key = shape_index
+            pattern_groups.setdefault(shape_key, [])
+
+            self.log(logging.DEBUG, f"Looping tile {self.node_str(node)}")
+
+            for r in range(rows):
+                for c in range(cols):
+                    dx = bbox.left + c * pw - px
+                    dy = bbox.top + r * ph - py
+
+                    tile_t = inkex.Transform().add_translate(dx, dy)
+
+                    clone = self.convert_to_path(node)
+                    if clone is None:
+                        continue
+
+                    raw_local = node.get("transform")
+                    local_t = inkex.Transform(raw_local) if raw_local else inkex.Transform()
+
+                    full_t = pattern_t @ tile_t @ local_t
+                    self.apply_transform_to_node(clone, full_t)
+
+                    pattern_groups[shape_key].append(clone)
+
+
+            if not pattern_groups:
+                self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, could not resolve tiles: {str(pattern_groups)}")
+                el.set("fill", "none")
+                return 1
+
+        # 5. Combine tiles per presentation signature
+        nodes = list(pattern.iterchildren())
+
+        merged_paths = []
+        for shape_key, paths in pattern_groups.items():
+            merged = self.combine_paths(paths)
+            if merged is None:
+                continue
+
+            node = nodes[shape_key]
+            self.copy_presentation_attributes(node, merged)
+
+            self.log(logging.DEBUG, f"Merged tiles {self.node_str(merged)}")
+
+            merged_paths.append(merged)
+
+        # 6. Build clipPath from the target element (element transform already resolved)
+        clip = inkex.ClipPath()
+        clip.attrib.pop("id", None)
+        clip.append(copy.deepcopy(el))
+
+        defs = self.ensure_defs()
+        self.add_node(clip, defs)
+        clip_id = clip.get("id")
+
+        parent, idx = self.parent_of(el)
+
+        # 7. Insert merged geometry, clipped to el
+        for path in merged_paths:
+            path.set("clip-path", f"url(#{clip_id})")
+            self.add_node(path, parent, idx)
+            idx += 1
+
+        # 8. Remove pattern fill from element
+        el.set("fill", "none")
+
+        self.log(logging.DEBUG,
+                f"Expanded pattern '{pattern_id}' into geometry on {self.node_str(el)}")
+
+        return 1
+
+
+    # endregion
+
     # region --- Clipping ---
     
 
@@ -3647,16 +3856,6 @@ class GT7Output(inkex.OutputExtension):
 
         if cp is None:
             return None
-        
-        #TODO - search for nested clipPath here!!!
-
-        #TODO Why is this needed - clipPath chain needs to be resolved properly!
-        # 3. Follow href chains inside <clipPath>
-        #while True:
-        #    href_target, href_id = self.ref_target(cp)
-        #    if href_target is None:
-        #        break
-        #    cp = href_target
 
         return cp
 

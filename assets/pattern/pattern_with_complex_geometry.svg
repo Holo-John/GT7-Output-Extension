@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="200" height="200" viewBox="0 0 200 200">
+
+  <defs>
+    <!-- Pattern with groups and transforms -->
+    <pattern id="complexPattern"
+             x="0" y="0"
+             width="40" height="40"
+             patternUnits="userSpaceOnUse"
+             patternTransform="rotate(10)">
+      
+      <!-- Grouped, transformed background -->
+      <g id="bgGroup" fill="#f0f0f0" transform="translate(2,2)">
+        <rect x="0" y="0" width="36" height="36"/>
+      </g>
+
+      <!-- Grouped foreground cross with its own transform -->
+      <g id="crossGroup" fill="#ff0000" transform="translate(20,20) rotate(45)">
+        <rect x="-2" y="-12" width="4" height="24"/>
+        <rect x="-12" y="-2" width="24" height="4"/>
+      </g>
+
+      <!-- Individual shape with local transform -->
+      <rect id="cornerSquare"
+            x="0" y="0" width="8" height="8"
+            fill="#0000ff"
+            transform="translate(30,30) scale(0.75)"/>
+    </pattern>
+  </defs>
+
+  <!-- Target geometry using the pattern -->
+  <rect x="20" y="20" width="160" height="160"
+        fill="url(#complexPattern)"
+        stroke="#000" stroke-width="2"/>
+</svg>
