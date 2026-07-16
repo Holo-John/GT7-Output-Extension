@@ -224,10 +224,6 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.INFO, f"Resolved {transform_count} transformations into plain geometry")
             self.log_svg(header="AFTER apply_all_transforms()")
 
-            pattern_count = self.remove_all_patterns()
-            self.log(logging.INFO, f"Resolved {pattern_count} patterns into plain geometry")
-            self.log_svg(header="AFTER remove_all_patterns()")
-
             clip_count = self.remove_all_clippaths()
             self.log(logging.INFO, f"Resolved {clip_count} clip-paths into plain geometry")
             self.log_svg(header="AFTER remove_all_clippaths()")
@@ -1672,31 +1668,27 @@ class GT7Output(inkex.OutputExtension):
 
     def convert_to_path(self, node, transform=None, replace_node=False):
             """Convert any geometry node to a path element."""
+            self.log(logging.DEBUG, f"OLD NODE {self.node_str(node)}") 
+
             tag = node.tag
+
+            new_node = None
 
             if tag == inkex.addNS('path', 'svg'):
                 # Parse existing path, preserving all subpaths
                 p = node.path.to_absolute()
 
                 self.log(logging.DEBUG,
-                    f"[CTP] BEFORE transform: id={node.get('id')} "
-                    f"fill-rule={node.get('fill-rule')} "
-                    f"style={node.get('style')} "
-                    f"subpaths={len(node.path.to_absolute())}"
+                    f"[CTP] BEFORE transform: {str(p)}"
                 )
-
 
                 # Apply transform safely
                 if transform is not None:
                     p = p.transform(transform)
 
                 self.log(logging.DEBUG,
-                    f"[CTP] AFTER transform: id={node.get('id')} "
-                    f"fill-rule={node.get('fill-rule')} "
-                    f"style={node.get('style')} "
-                    f"subpaths={len(p)}"
+                    f"[CTP] AFTER transform: {str(p)}"
                 )
-
 
                 # Create new node (clone) or replacement
                 new_node = inkex.PathElement()
@@ -1718,30 +1710,31 @@ class GT7Output(inkex.OutputExtension):
                     self.remove_node(node, parent)
                     self.add_node(new_node, parent, idx)
 
-                self.log(logging.DEBUG,
-                    f"[CTP] NEW_NODE: id={new_node.get('id')} {self.node_str(new_node)}"
-                )
+            else:
+            
+                self.log(logging.DEBUG, f"[CTP] {self.node_str(node)}")
 
+                if tag == inkex.addNS('rect', 'svg'):
+                    new_node = self.rect_to_path(node, transform=transform, replace_node=replace_node)
 
-                return new_node
+                if tag == inkex.addNS('circle', 'svg'):
+                    new_node = self.circle_to_path(node, transform=transform, replace_node=replace_node)
 
-            if tag == inkex.addNS('rect', 'svg'):
-                return self.rect_to_path(node, transform=transform, replace_node=replace_node)
+                if tag == inkex.addNS('ellipse', 'svg'):
+                    new_node = self.ellipse_to_path(node, transform=transform, replace_node=replace_node)
 
-            if tag == inkex.addNS('circle', 'svg'):
-                return self.circle_to_path(node, transform=transform, replace_node=replace_node)
+                if tag in (inkex.addNS('polygon', 'svg'), inkex.addNS('polyline', 'svg')):
+                    new_node = self.poly_to_path(node, transform=transform, replace_node=replace_node)
 
-            if tag == inkex.addNS('ellipse', 'svg'):
-                return self.ellipse_to_path(node, transform=transform, replace_node=replace_node)
-
-            if tag in (inkex.addNS('polygon', 'svg'), inkex.addNS('polyline', 'svg')):
-                return self.poly_to_path(node, transform=transform, replace_node=replace_node)
-
-            if tag == inkex.addNS('line', 'svg'):
-                return self.line_to_path(node, transform=transform, replace_node=replace_node)
+                if tag == inkex.addNS('line', 'svg'):
+                    new_node = self.line_to_path(node, transform=transform, replace_node=replace_node)
 
             # Unsupported geometry → ignore
-            return None
+            if new_node is None:
+                self.log(logging.DEBUG, f"Unsupported {self.node_str(node)}")
+            else:
+                self.log(logging.DEBUG, f"NEW NODE {self.node_str(new_node)}")    
+            return new_node
 
     def circle_to_path(self, node, transform=None, replace_node=True):
         # Extract geometry
@@ -1868,7 +1861,7 @@ class GT7Output(inkex.OutputExtension):
 
         return new_node
 
-    def poly_to_path(self, node, transform=None, close=False, replace_node=True):
+    def poly_to_path(self, node, transform=None, replace_node=True):
         points = node.get("points")
         if not points:
             return
@@ -1885,6 +1878,8 @@ class GT7Output(inkex.OutputExtension):
                 d.append(f"M {x},{y}")
             else:
                 d.append(f"L {x},{y}")
+
+        close = (self.tag_name(node) == "polygon")
 
         if close:
             d.append("Z")
@@ -1965,14 +1960,8 @@ class GT7Output(inkex.OutputExtension):
                     continue
 
                 # polyline → path
-                case "polyline":
-                    self.poly_to_path(el, close=False)
-                    count += 1
-                    continue
-
-                # polygon → path
-                case "polygon":
-                    self.poly_to_path(el, close=True)
+                case "polyline" | "polygon":
+                    self.poly_to_path(el)
                     count += 1
                     continue
 
@@ -2094,6 +2083,34 @@ class GT7Output(inkex.OutputExtension):
 
         return 1
 
+    def apply_transform_to_pattern_used_by(self, node, T):
+        """
+        Flatten pattern geometry using the shape's CTM.
+        """
+        self.log(logging.DEBUG,
+            f"id={self.node_str(node)} fill={node.get('fill')} T={T}"
+        )
+
+        pattern, pattern_id = self.ref_target(node, "fill")
+        if pattern is None or self.tag_name(pattern) != "pattern":
+            return 0
+
+        self.log(logging.DEBUG, f"[PAT] flattening pattern {pattern_id}")
+
+        # Combine patternTransform with the shape CTM
+        raw_pt = pattern.get("patternTransform")
+        pt = Transform(raw_pt) if raw_pt else Transform()
+        combined = T @ pt
+        pattern.set("patternTransform", str(combined))
+
+        # Flatten geometry inside the pattern
+        for child in list(pattern):
+            self.apply_transform_to_node(child, combined)
+            child.attrib.pop("transform", None)
+
+        return 1
+
+    
 
 
     def apply_transform_to_node(self, node, transform):
@@ -2172,10 +2189,10 @@ class GT7Output(inkex.OutputExtension):
         counted, node = self.apply_transform_to_node(node, combined)
         count += counted
 
-        # Apply CTM to gradients referenced by this node
+        # Apply CTM to gradients, clippaths and patterns referenced by this node
         count += self.apply_transform_to_gradients_used_by(node, combined)
-
         count+= self.apply_transform_to_clippath_used_by(node, combined)
+        #count+= self.apply_transform_to_pattern_used_by(node, combined)
 
         # Remove transform attribute after flattening
         node.attrib.pop("transform", None)
@@ -3493,6 +3510,8 @@ class GT7Output(inkex.OutputExtension):
 
         shape.set("fill", f"url(#{new_id})")
 
+        self.pattern_to_geometry(shape)
+
         return 1
 
     def add_geom_preserving_zorder(self, parts, geom):
@@ -3518,7 +3537,7 @@ class GT7Output(inkex.OutputExtension):
                     continue
 
             # otherwise append normally
-            self.log(logging.DEBUG,f"Appending {self.node_str(item)}")
+            self.log(logging.DEBUG,f"Adding {self.node_str(item)}")
             parts.append(item)
 
 
@@ -3545,6 +3564,23 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.DEBUG,f"Adding {str(geom)}")
             self.add_geom_preserving_zorder(parts, geom)
 
+
+        # handle href / xlink:href on <pattern> itself
+        ref, ref_id = self.ref_target(pattern)
+        if ref is not None:
+            self.log(logging.DEBUG, f"[PAT]   pattern references {self.node_str(ref)}")
+
+            ref_geom = self.resolve_pattern(ref, transform=transform)
+
+            # Copy tiling attributes from referenced pattern
+            for attr in ("x", "y", "width", "height", "patternUnits", "patternContentUnits", "patternTransform"):
+                if attr in ref.attrib and not attr in pattern.attrib:
+                    pattern.set(attr, ref.get(attr))
+
+            if len(pattern) == 0:
+                parts = ref_geom
+                
+
         return parts
 
     def resolve_pattern_geometry(self, node, M):
@@ -3560,7 +3596,7 @@ class GT7Output(inkex.OutputExtension):
         tag = self.tag_name(node)
 
         # geometry → path
-        if self.is_geometry(node, gt7_supported=True):
+        if self.is_geometry(node, gt7_supported=False):
             geom = self.convert_to_path(node, M)
             if not geom is None:
                 geom.attrib.pop("transform", None)
@@ -3665,8 +3701,9 @@ class GT7Output(inkex.OutputExtension):
 
         # 2. Target bbox → tile grid
         bbox = el.bounding_box()
-        cols = math.ceil(bbox.width / pw)
-        rows = math.ceil(bbox.height / ph)
+        cols = math.ceil((bbox.width + pw) / pw)
+        rows = math.ceil((bbox.height + ph) / ph)
+
 
         # 3. Pattern transform
         raw_pt = pattern.get("patternTransform")
@@ -3674,6 +3711,7 @@ class GT7Output(inkex.OutputExtension):
 
         # 4. Collect tiles grouped by presentation
         pattern_groups = {}
+        geom_count = 0
 
         for shape_index, node in enumerate(nodes):
             # one group per original pattern child
@@ -3693,16 +3731,14 @@ class GT7Output(inkex.OutputExtension):
                     if clone is None:
                         continue
 
-                    raw_local = node.get("transform")
-                    local_t = inkex.Transform(raw_local) if raw_local else inkex.Transform()
-
-                    full_t = pattern_t @ tile_t @ local_t
+                    full_t = pattern_t @ tile_t
                     self.apply_transform_to_node(clone, full_t)
 
                     pattern_groups[shape_key].append(clone)
+                    geom_count += 1
 
 
-            if not pattern_groups:
+            if not geom_count:
                 self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, could not resolve tiles: {str(pattern_groups)}")
                 el.set("fill", "none")
                 return 1
@@ -3723,21 +3759,24 @@ class GT7Output(inkex.OutputExtension):
 
             merged_paths.append(merged)
 
-        # 6. Build clipPath from the target element (element transform already resolved)
-        clip = inkex.ClipPath()
-        clip.attrib.pop("id", None)
-        clip.append(copy.deepcopy(el))
+        # 6. Build shape transform and clipPath from the target element (element transform already resolved)
+        el_t = Transform(el.get("transform")) if el.get("transform") else None
 
-        defs = self.ensure_defs()
-        self.add_node(clip, defs)
-        clip_id = clip.get("id")
+        clip_shape = copy.deepcopy(el) 
+        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
 
         parent, idx = self.parent_of(el)
 
         # 7. Insert merged geometry, clipped to el
         for path in merged_paths:
-            path.set("clip-path", f"url(#{clip_id})")
-            self.add_node(path, parent, idx)
+            self.log(logging.DEBUG, f"Raw {self.node_str(path)}")
+            clipped_path = self.path_intersection(path, clip_shape)
+            self.copy_presentation_attributes(path, clipped_path)
+            self.log(logging.DEBUG, f"Intersected {self.node_str(clipped_path)}")
+
+            if not el_t is None:
+                clipped_path.set("transform", el_t)
+            self.add_node(clipped_path, parent, idx)
             idx += 1
 
         # 8. Remove pattern fill from element
