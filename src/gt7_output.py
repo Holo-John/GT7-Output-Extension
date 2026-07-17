@@ -3628,37 +3628,6 @@ class GT7Output(inkex.OutputExtension):
         # unsupported → ignore
         return None
 
-
-    def remove_all_patterns(self, node=None):
-        """
-        Post-order pass to resolve pattern fills into geometry.
-        For each geometry node with fill="url(#id)" referencing a <pattern>,
-        expand the pattern into clipped geometry and clear the fill.
-        """
-
-        if node is None:
-            node = self.svg
-
-        tag = self.tag_name(node)
-
-        # Skip paint servers and non-geometry
-        if tag in ("linearGradient", "radialGradient", "filter", "marker", "stop"):
-            return 0
-
-        count = 0
-
-        # 1. Recurse
-        for child in list(node):
-            count += self.remove_all_patterns(child)
-
-        # 2. Process this node
-        resolved = self.pattern_to_geometry(node)
-        if resolved:
-            # only clear fill if we actually expanded a pattern
-            node.set("fill", "none")
-
-        return count + resolved
-
     
     def presentation_signature(self, el):
         """
@@ -3667,6 +3636,42 @@ class GT7Output(inkex.OutputExtension):
         """
 
         return tuple((attr, el.get(attr)) for attr in sorted(self.PRESENTATION_ATTRS))
+
+
+    def iter_pattern_tiles(self, el, pattern):
+        """
+        Yield (r, c, dx, dy) tile positions for a pattern aligned in userSpaceOnUse.
+        el: the target shape
+        pattern: the <pattern> element
+        """
+
+        bbox = el.bounding_box()
+
+        px = float(pattern.get("x", 0))
+        py = float(pattern.get("y", 0))
+        pw = float(pattern.get("width", 0))
+        ph = float(pattern.get("height", 0))
+
+        if pw <= 0 or ph <= 0:
+            self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, invalid width/height: with={pw}, height={ph}")
+            return
+
+        # Phase alignment: find the tile covering bbox.left/top
+        col0 = math.floor((bbox.left - px) / pw)
+        row0 = math.floor((bbox.top  - py) / ph)
+
+        # How many tiles we need
+        start_x = px + col0 * pw
+        start_y = py + row0 * ph
+
+        cols = math.ceil((bbox.right  - start_x) / pw) 
+        rows = math.ceil((bbox.bottom - start_y) / ph)
+
+        for r in range(rows):
+            for c in range(cols):
+                dx = px + (col0 + c) * pw
+                dy = py + (row0 + r) * ph
+                yield r, c, dx, dy
 
 
     def pattern_to_geometry(self, el):
@@ -3688,23 +3693,6 @@ class GT7Output(inkex.OutputExtension):
         
         self.log(logging.DEBUG, f"Replacing pattern {self.node_str(pattern)}")
 
-        # 1. Pattern tile size
-        px = float(pattern.get("x", 0))
-        py = float(pattern.get("y", 0))
-        pw = float(pattern.get("width", 0))
-        ph = float(pattern.get("height", 0))
-
-        if pw <= 0 or ph <= 0:
-            self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, invalid width/height: with={pw}, height={ph}")
-            el.set("fill", "none")
-            return 1
-
-        # 2. Target bbox → tile grid
-        bbox = el.bounding_box()
-        cols = math.ceil((bbox.width + pw) / pw)
-        rows = math.ceil((bbox.height + ph) / ph)
-
-
         # 3. Pattern transform
         raw_pt = pattern.get("patternTransform")
         pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
@@ -3714,22 +3702,19 @@ class GT7Output(inkex.OutputExtension):
         geom_count = 0
 
         for shape_index, node in enumerate(nodes):
+
             # one group per original pattern child
             shape_key = shape_index
             pattern_groups.setdefault(shape_key, [])
 
             self.log(logging.DEBUG, f"Looping tile {self.node_str(node)}")
 
-            for r in range(rows):
-                for c in range(cols):
-                    dx = bbox.left + c * pw - px
-                    dy = bbox.top + r * ph - py
-
-                    tile_t = inkex.Transform().add_translate(dx, dy)
-
+            for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
                     clone = self.convert_to_path(node)
                     if clone is None:
                         continue
+
+                    tile_t = inkex.Transform().add_translate(dx, dy)
 
                     full_t = pattern_t @ tile_t
                     self.apply_transform_to_node(clone, full_t)
@@ -3738,10 +3723,10 @@ class GT7Output(inkex.OutputExtension):
                     geom_count += 1
 
 
-            if not geom_count:
-                self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, could not resolve tiles: {str(pattern_groups)}")
-                el.set("fill", "none")
-                return 1
+        if not geom_count:
+            self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, could not resolve tiles: {str(pattern_groups)}")
+            el.set("fill", "none")
+            return 1
 
         # 5. Combine tiles per presentation signature
         nodes = list(pattern.iterchildren())
