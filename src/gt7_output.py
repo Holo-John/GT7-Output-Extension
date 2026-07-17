@@ -3643,8 +3643,10 @@ class GT7Output(inkex.OutputExtension):
         el: the target shape
         pattern: the <pattern> element
         """
-
+        pattern_t = inkex.Transform(pattern.get("transform")) if pattern.get("transform") else None
         bbox = el.bounding_box()
+        if pattern_t is not None:
+            bbox.apply_transform(pattern_t)
 
         px = float(pattern.get("x", 0))
         py = float(pattern.get("y", 0))
@@ -3716,7 +3718,7 @@ class GT7Output(inkex.OutputExtension):
 
                 # tile transform only
                 tile_t = inkex.Transform().add_translate(dx, dy)
-                self.apply_transform_to_node(clone, tile_t)
+                self.transform_path(clone, tile_t)
 
                 # incremental merge
                 if merged is None:
