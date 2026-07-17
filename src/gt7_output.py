@@ -3643,10 +3643,8 @@ class GT7Output(inkex.OutputExtension):
         el: the target shape
         pattern: the <pattern> element
         """
-        pattern_t = inkex.Transform(pattern.get("transform")) if pattern.get("transform") else None
+
         bbox = el.bounding_box()
-        if pattern_t is not None:
-            bbox.apply_transform(pattern_t)
 
         px = float(pattern.get("x", 0))
         py = float(pattern.get("y", 0))
@@ -3654,25 +3652,41 @@ class GT7Output(inkex.OutputExtension):
         ph = float(pattern.get("height", 0))
 
         if pw <= 0 or ph <= 0:
-            self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, invalid width/height: with={pw}, height={ph}")
+            self.log(logging.DEBUG,
+                    f"Removing pattern {self.node_str(pattern)}, invalid width/height: width={pw}, height={ph}")
             return
 
-        # Phase alignment: find the tile covering bbox.left/top
-        col0 = math.floor((bbox.left - px) / pw)
-        row0 = math.floor((bbox.top  - py) / ph)
+        # include child transform (e.g. <g transform="translate(-89,-270)>)
+        
+        self.log(logging.DEBUG, f"px={px}")
+        self.log(logging.DEBUG, f"py={py}")
 
-        # How many tiles we need
+        # Phase alignment: find the tile covering bbox.left/top
+        col0 = math.floor((bbox.left - px) / pw) - 1
+        row0 = math.floor((bbox.top  - py) / ph) - 1
+
+        self.log(logging.DEBUG, f"col0={col0}")
+        self.log(logging.DEBUG, f"row0={row0}")
+
         start_x = px + col0 * pw
         start_y = py + row0 * ph
 
-        cols = math.ceil((bbox.right  - start_x) / pw) 
-        rows = math.ceil((bbox.bottom - start_y) / ph)
+        self.log(logging.DEBUG, f"start_y={start_x}")
+        self.log(logging.DEBUG, f"start_x={start_y}")
+
+        cols = math.ceil((bbox.right  - start_x) / pw) + 1 + math.ceil(abs(px-start_x) / pw)
+        rows = math.ceil((bbox.bottom - start_y) / ph) + 1 + math.ceil(abs(py-start_y) / ph)
+
+        self.log(logging.DEBUG, f"cols={cols}")
+        self.log(logging.DEBUG, f"rows={rows}")
 
         for r in range(rows):
             for c in range(cols):
                 dx = px + (col0 + c) * pw
                 dy = py + (row0 + r) * ph
                 yield r, c, dx, dy
+
+
 
 
     def pattern_to_geometry(self, el):
