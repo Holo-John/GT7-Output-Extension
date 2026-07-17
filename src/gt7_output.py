@@ -3854,8 +3854,8 @@ class GT7Output(inkex.OutputExtension):
         else:
             return self.empty_path()
 
-        # apply clip-path to gemoetry (if any)
-        cp = self.get_clippath(node)
+        # apply clip-path to geometry (if any)
+        cp, cp_id = self.ref_target(node, "clip-path")
         if cp is not None:
             self.log(logging.DEBUG, f"[CP]     applying nested {self.node_str(cp)}")
 
@@ -3868,21 +3868,6 @@ class GT7Output(inkex.OutputExtension):
         self.log(logging.DEBUG, f"[CP]     returning geometry {self.node_str(geom)}") 
 
         return geom
-
-
-    def get_clippath(self, el):
-        """
-        Return the <clipPath> element referenced by el's clip-path attribute.
-        Follow href chains. Do NOT resolve geometry.
-        """
-
-        # 1. Extract clip-path reference
-        cp, cp_id = self.ref_target(el, "clip-path")
-
-        if cp is None:
-            return None
-
-        return cp
 
     def normalize_clippath_units(self, flattened, cp, shape):
         """
@@ -3926,7 +3911,7 @@ class GT7Output(inkex.OutputExtension):
         """
 
         # 1. Get structural <clipPath> element
-        cp = self.get_clippath(shape)
+        cp, cp_id = self.ref_target(shape, "clip-path")
         if cp is None:
             return 0
 
@@ -3990,7 +3975,7 @@ class GT7Output(inkex.OutputExtension):
             count += self.remove_all_clippaths(child)
 
         # --- 2. Process this node ---
-        cp = self.get_clippath(node)
+        cp, cp_id = self.ref_target(node, "clip-path")
         if cp is None:
             return count
         
