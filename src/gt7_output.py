@@ -2192,7 +2192,6 @@ class GT7Output(inkex.OutputExtension):
         # Apply CTM to gradients, clippaths and patterns referenced by this node
         count += self.apply_transform_to_gradients_used_by(node, combined)
         count+= self.apply_transform_to_clippath_used_by(node, combined)
-        #count+= self.apply_transform_to_pattern_used_by(node, combined)
 
         # Remove transform attribute after flattening
         node.attrib.pop("transform", None)
@@ -3695,56 +3694,9 @@ class GT7Output(inkex.OutputExtension):
 
         # 3. Pattern transform
         raw_pt = pattern.get("patternTransform")
-        pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
+        pattern_t = inkex.Transform(raw_pt) if raw_pt else None
 
         # 4. Collect tiles grouped by presentation
-        pattern_groups = {}
-        geom_count = 0
-
-        for shape_index, node in enumerate(nodes):
-
-            # one group per original pattern child
-            shape_key = shape_index
-            pattern_groups.setdefault(shape_key, [])
-
-            self.log(logging.DEBUG, f"Looping tile {self.node_str(node)}")
-
-            for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
-                    clone = self.convert_to_path(node)
-                    if clone is None:
-                        continue
-
-                    tile_t = inkex.Transform().add_translate(dx, dy)
-
-                    full_t = pattern_t @ tile_t
-                    self.apply_transform_to_node(clone, full_t)
-
-                    pattern_groups[shape_key].append(clone)
-                    geom_count += 1
-
-
-        if not geom_count:
-            self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, could not resolve tiles: {str(pattern_groups)}")
-            el.set("fill", "none")
-            return 1
-
-        # 5. Combine tiles per presentation signature
-        nodes = list(pattern.iterchildren())
-
-        merged_paths = []
-        for shape_key, paths in pattern_groups.items():
-            merged = self.combine_paths(paths)
-            if merged is None:
-                continue
-
-            node = nodes[shape_key]
-            self.copy_presentation_attributes(node, merged)
-
-            self.log(logging.DEBUG, f"Merged tiles {self.node_str(merged)}")
-
-            merged_paths.append(merged)
-
-        # 6. Build shape transform and clipPath from the target element (element transform already resolved)
         el_t = Transform(el.get("transform")) if el.get("transform") else None
 
         clip_shape = copy.deepcopy(el) 
@@ -3752,11 +3704,39 @@ class GT7Output(inkex.OutputExtension):
 
         parent, idx = self.parent_of(el)
 
-        # 7. Insert merged geometry, clipped to el
-        for path in merged_paths:
-            self.log(logging.DEBUG, f"Raw {self.node_str(path)}")
-            clipped_path = self.path_intersection(path, clip_shape)
-            self.copy_presentation_attributes(path, clipped_path)
+        count = 0
+
+        for shape_index, node in enumerate(nodes):
+            merged = None
+
+            for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
+                clone = self.convert_to_path(node)
+                if clone is None:
+                    continue
+
+                # tile transform only
+                tile_t = inkex.Transform().add_translate(dx, dy)
+                self.apply_transform_to_node(clone, tile_t)
+
+                # incremental merge
+                if merged is None:
+                    merged = clone
+                else:
+                    merged = self.combine_paths([merged, clone])
+
+            if merged is None:
+                continue
+
+            count += 1
+
+            # apply patternTransform ONCE
+            
+            if not pattern_t is None:
+                self.apply_transform_to_node(merged, pattern_t)
+
+            self.log(logging.DEBUG, f"Raw {self.node_str(merged)}")
+            clipped_path = self.path_intersection(merged, clip_shape)
+            self.copy_presentation_attributes(node, clipped_path)
             self.log(logging.DEBUG, f"Intersected {self.node_str(clipped_path)}")
 
             if not el_t is None:
@@ -3764,6 +3744,11 @@ class GT7Output(inkex.OutputExtension):
             self.add_node(clipped_path, parent, idx)
             idx += 1
 
+        if not count:
+            self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, could not resolve any geometry")
+            el.set("fill", "none")
+            return 1
+        
         # 8. Remove pattern fill from element
         el.set("fill", "none")
 
