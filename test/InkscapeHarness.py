@@ -241,16 +241,18 @@ def run_gt7_test(test_source: str, case_name: str, svg_path: pathlib.Path, thres
     output_gt7_svg = artifact_dir / svg_path.with_suffix(".gt7.svg").name
     input_png      = artifact_dir / "input.png"
     output_png     = artifact_dir / "output.gt7.png"
-    diff_png       = artifact_dir / "diff.png"
+    diff_png       = artifact_dir / "diff.png"    
 
-    # Run GT7 exporter
-    result = run_extension_on_svg(GT7Output, svg_path)
-    output_gt7_svg.write_text(result, encoding="utf-8")
+    try:
+        # Run GT7 exporter
+        result = run_extension_on_svg(GT7Output, svg_path)
+        output_gt7_svg.write_text(result, encoding="utf-8")
 
-    # Copy logs + input SVG
-    log_file = pathlib.Path(tempfile.gettempdir()) / "gt7_export.log"
-    shutil.copy(str(log_file), artifact_dir / log_file.name)
-    shutil.copy(str(svg_path), artifact_dir / svg_path.name)
+    finally:
+        # Copy logs + input SVG
+        log_file = pathlib.Path(tempfile.gettempdir()) / "gt7_export.log"
+        shutil.copy(str(log_file), artifact_dir / svg_path.with_suffix(".log").name)
+        shutil.copy(str(svg_path), artifact_dir / svg_path.name)
 
     # Render expected + actual
     render_svg_to_png(str(svg_path), str(input_png))

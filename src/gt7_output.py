@@ -3478,6 +3478,11 @@ class GT7Output(inkex.OutputExtension):
             geom = self.resolve_pattern_geometry(child, transform)
             if geom is None:
                 continue
+            
+            geoms = geom if isinstance(geom, list) else [geom]
+            for item in geoms:
+                self.resolve_clippath_for_shape(item)
+                self.resolve_gradient_for_shape(item)
 
             self.log(logging.DEBUG,f"Adding {str(geom)}")
             self.add_geom_preserving_zorder(parts, geom)
@@ -3636,6 +3641,117 @@ class GT7Output(inkex.OutputExtension):
 
         return True
 
+    def merge_tiles(self, node, el, pattern):
+        count = 0
+
+        # 3. Pattern transform
+        raw_pt = pattern.get("patternTransform")
+        pattern_t = inkex.Transform(raw_pt) if raw_pt else None
+
+        # 4. Collect tiles grouped by presentation
+        el_t = Transform(el.get("transform")) if el.get("transform") else None
+
+        clip_shape = copy.deepcopy(el) 
+        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
+
+        parent, idx = self.parent_of(el)
+
+        merged = None
+
+        for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
+            clone = self.convert_to_path(node)
+            if clone is None:
+                continue
+
+            # tile transform only
+            tile_t = inkex.Transform().add_translate(dx, dy)
+            self.transform_path(clone, tile_t)
+            
+            # incremental merge
+            self.log(logging.DEBUG, f"Merging tile {self.node_str(clone)}")
+
+            if merged is None:
+                merged = clone
+            else:
+                merged = self.combine_paths([merged, clone])
+            
+
+        if merged is None:
+            return 0
+
+        # apply patternTransform ONCE
+        
+        if not pattern_t is None:
+            self.apply_transform_to_node(merged, pattern_t)
+
+        self.log(logging.DEBUG, f"Raw {self.node_str(merged)}")
+        clipped_path = self.path_intersection(merged, clip_shape)
+        self.copy_presentation_attributes(node, clipped_path)
+        self.log(logging.DEBUG, f"Intersected {self.node_str(clipped_path)}")
+
+        if not el_t is None:
+            clipped_path.set("transform", el_t)
+        self.add_node(clipped_path, parent, idx)
+        
+        return 1
+    
+
+    def append_tiles(self, node, el, pattern):
+        # 3. Pattern transform
+        raw_pt = pattern.get("patternTransform")
+        pattern_t = inkex.Transform(raw_pt) if raw_pt else None
+
+        # 4. Collect tiles grouped by presentation
+        el_t = Transform(el.get("transform")) if el.get("transform") else None
+
+        clip_shape = copy.deepcopy(el) 
+        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
+        clip_shape.attrib.pop("fill", None)   # ← Clip against untransformed shapes
+        clip_shape.attrib.pop("stroke", None)   # ← Clip against untransformed shapes
+
+        parent, idx = self.parent_of(el)
+
+        merged = inkex.Group()
+
+        for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
+            clone = self.convert_to_path(node)
+            if clone is None:
+                continue
+
+            # tile transform only
+            tile_t = inkex.Transform().add_translate(dx, dy)
+            self.transform_path(clone, tile_t)
+            
+            self.log(logging.DEBUG, f"Appending tile {self.node_str(clone)}")
+
+            self.copy_presentation_attributes(node, clone)
+            merged.append(element=clone)
+
+            self.log(logging.DEBUG, f"merged = {self.node_str(merged)}, children = {len(list(merged))}")
+
+
+        if merged is None:
+            return 0
+
+        # apply patternTransform ONCE
+        
+        if not pattern_t is None:
+            self.apply_transform_to_node(merged, pattern_t)
+
+        tiles = list(merged) 
+        clipped_tiles = self.multi_path_intersection(clip_shape, tiles)
+
+        self.log(logging.DEBUG, f"{len(clipped_tiles)} tiles clipped")
+        
+        merged.clear()
+        
+        for tile in clipped_tiles:
+            self.log(logging.DEBUG, f"Intersected tile {self.node_str(tile)}")
+            merged.append(tile)
+
+        self.add_node(merged, parent, idx)
+
+        return 1
 
     def pattern_to_geometry(self, el):
         """
@@ -3656,59 +3772,17 @@ class GT7Output(inkex.OutputExtension):
         
         self.log(logging.DEBUG, f"Replacing pattern {self.node_str(pattern)}")
 
-        # 3. Pattern transform
-        raw_pt = pattern.get("patternTransform")
-        pattern_t = inkex.Transform(raw_pt) if raw_pt else None
-
-        # 4. Collect tiles grouped by presentation
-        el_t = Transform(el.get("transform")) if el.get("transform") else None
-
-        clip_shape = copy.deepcopy(el) 
-        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
-
-        parent, idx = self.parent_of(el)
-
         count = 0
 
         for shape_index, node in enumerate(nodes):
-            merged = None
-            if not self.tiles_can_be_merged(node):
-                self.log(logging.WARNING, f"Pattern with gradient on node {self.node_str(el)} got merged into a single path")
-
-            for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
-                clone = self.convert_to_path(node)
-                if clone is None:
-                    continue
-
-                # tile transform only
-                tile_t = inkex.Transform().add_translate(dx, dy)
-                self.transform_path(clone, tile_t)
-               
-                # incremental merge
-                if merged is None:
-                    merged = clone
-                else:
-                    merged = self.combine_paths([merged, clone])
-
-            if merged is None:
-                continue
-
-            count += 1
-
-            # apply patternTransform ONCE
             
-            if not pattern_t is None:
-                self.apply_transform_to_node(merged, pattern_t)
-
-            self.log(logging.DEBUG, f"Raw {self.node_str(merged)}")
-            clipped_path = self.path_intersection(merged, clip_shape)
-            self.copy_presentation_attributes(node, clipped_path)
-            self.log(logging.DEBUG, f"Intersected {self.node_str(clipped_path)}")
-
-            if not el_t is None:
-                clipped_path.set("transform", el_t)
-            self.add_node(clipped_path, parent, idx)
-            idx += 1
+            can_be_merged = self.tiles_can_be_merged(node)
+            self.log(logging.DEBUG, f"Can be merged={can_be_merged}, {self.node_str(node)}")
+                
+            if can_be_merged:
+                count += self.merge_tiles(node, el, pattern)
+            else:
+                count += self.append_tiles(node, el, pattern)
 
         if not count:
             self.log(logging.DEBUG, f"Removing pattern {self.node_str(pattern)}, could not resolve any geometry")
@@ -4077,8 +4151,6 @@ class GT7Output(inkex.OutputExtension):
         doc = inkex.load_svg(minimal_svg)
         root = doc.getroot()
 
-        root.set('xmlns', 'http://www.w3.org/2000/svg')
-
         ids = []
 
         for i, node in enumerate(nodes):
@@ -4100,8 +4172,6 @@ class GT7Output(inkex.OutputExtension):
             ids.append(elem_id)
 
         return doc, ids
-
-
 
 
     def rasterize_nodes(self, nodes):
@@ -4141,6 +4211,109 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.DEBUG,f"Read {len(png_bytes)} bytes")
 
             return png_bytes
+
+
+    def svg_for_multy_path_intersection(self, cp, path_list, prefix="multi"):
+        """
+        Build an SVG containing:
+        - cp0: original clipPath
+        - cp1..cpN: duplicates of cp for each path except the first
+        - p0..pN: the paths to intersect with cp
+        Returns (doc, cp_ids, path_ids)
+        """
+
+        nodes = []
+
+        # cp0 = original clipPath
+        nodes.append(cp)
+
+        # cp1..cpN = duplicates
+        for _ in range(1, len(path_list)):
+            nodes.append(cp.copy())
+
+        # p0..pN = paths
+        for p in path_list:
+            nodes.append(p)
+
+        # Reuse your existing builder
+        doc, ids = self.build_svg_for_actions(nodes, prefix)
+
+        # Split IDs into cp_ids and path_ids
+        cp_ids = ids[:len(path_list)]
+        path_ids = ids[len(path_list):]
+
+        return doc, cp_ids, path_ids
+
+
+    def actions_for_multi_path_intersection(self, cp_ids, path_ids):
+        """
+        Build the Inkscape Actions chain:
+        cp0 ∩ p0 → r0
+        cp1 ∩ p1 → r1
+        cp2 ∩ p2 → r2
+        ...
+        """
+
+        actions = []
+
+        for cp_id, pid in zip(cp_ids, path_ids):
+            actions.append(f"select-by-id:{cp_id}")
+            actions.append(f"select-by-id:{pid}")
+            actions.append("path-intersection")
+            actions.append("select-clear")
+
+        return ";".join(actions)
+    
+    def multi_path_intersection(self, cp, path_list):
+        """
+        Perform multi-intersection in a single Inkscape invocation.
+        Returns a list of resulting <path> elements.
+        """
+
+        # 1. Build SVG with cp duplicates + paths
+        doc, cp_ids, path_ids = self.svg_for_multy_path_intersection(cp, path_list)
+        root = doc.getroot()
+        svg_input = inkex.etree.tostring(root, encoding="unicode")
+        self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
+
+        # 2. Build actions chain
+        actions = self.actions_for_multi_path_intersection(cp_ids, path_ids)
+
+        # 3. Run Inkscape once
+        result_bytes = inkex.command.inkscape_command(
+            doc,
+            actions=actions,
+        )
+
+        # 4. Parse result
+        result_doc = inkex.load_svg(result_bytes)
+        result_root = result_doc.getroot()
+
+        # 5. Extract all <path> elements
+        out_paths = result_root.findall(".//{http://www.w3.org/2000/svg}path")
+
+        self.log(logging.DEBUG,f"Inkscape output:\n {inkex.etree.tostring(result_root)}")
+
+        # 7. Wrap each result into a new PathElement
+        results = []
+        for p in out_paths:
+            self.log(logging.DEBUG, f"Clipped {self.node_str(p)}")
+            new_p = inkex.PathElement()
+            new_p.set("d", p.get("d"))
+
+            if hasattr(p, "path"):
+                new_p.path = p.path
+
+            self.copy_presentation_attributes(p, new_p)
+            results.append(new_p)
+
+        self.log(logging.DEBUG, f"{len(results)} clipped paths extracted from output")
+
+        return results
+
+
+
+    # Split IDs into cp_ids and path
     
     # endregion
 
