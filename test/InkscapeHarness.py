@@ -213,8 +213,27 @@ def clean_dir(path: pathlib.Path):
         elif item.is_dir():
             shutil.rmtree(item)
 
+SSIM_DEFAULT_THRESHOLDS = {
+    "*": 0.90,
+}
 
-def run_gt7_test(test_source: str, case_name: str, svg_path: pathlib.Path):
+
+
+def resolve_threshold(svg_path: pathlib.Path, thresholds: dict[str, float]) -> float:
+    # 1. Specific file override
+    if svg_path.name in thresholds:
+        return thresholds[svg_path.name]
+
+    # 2. "*" default override
+    if "*" in thresholds:
+        return thresholds["*"]
+
+    # 3. Hardcoded fallback
+    return 0.9
+
+
+
+def run_gt7_test(test_source: str, case_name: str, svg_path: pathlib.Path, thresholds: dict = SSIM_DEFAULT_THRESHOLDS):
     artifact_dir = pathlib.Path(ASSETS_ROOT) / test_source / case_name
     artifact_dir.mkdir(parents=True, exist_ok=True)
     clean_dir(artifact_dir)
@@ -243,7 +262,8 @@ def run_gt7_test(test_source: str, case_name: str, svg_path: pathlib.Path):
 
     save_diff_image(diff, diff_png)
 
-    if score <= 0.90:
+    threshold = resolve_threshold(svg_path, thresholds)
+    if score <= threshold:
         raise AssertionError(f"Gradient test '{case_name}' failed (SSIM={score})")
 
     assert_gt7_compliant_file(output_gt7_svg)

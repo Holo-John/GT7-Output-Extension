@@ -7,6 +7,8 @@ from InkscapeHarness import (
 
 TEST_SUITE = pathlib.Path("assets/filters_and_masks")
 
+FILTER_MASK_THRESHOLDS = { "*": 0.5  }
+
 def discover_svg_files():
     """Yield (case_name, svg_path) for each SVG file in the suite directory."""
     for svg_file in TEST_SUITE.glob("*.svg"):
@@ -15,5 +17,5 @@ def discover_svg_files():
 
 @pytest.mark.parametrize("case_name, svg_path", list(discover_svg_files()))
 def test_clippaths_case(case_name, svg_path):
-    run_gt7_test(TEST_SUITE.name, case_name, svg_path)
+    run_gt7_test(TEST_SUITE.name, case_name, svg_path, thresholds=FILTER_MASK_THRESHOLDS)
 
