@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+  <defs>
+    <!-- Referenced pattern -->
+    <pattern id="stripePattern" patternUnits="userSpaceOnUse"
+             x="0" y="0" width="20" height="20">
+      <rect width="20" height="20" fill="white"/>
+      <rect width="20" height="10" fill="black"/>
+    </pattern>
+
+    <!-- Referencing pattern WITHOUT its own geometry -->
+    <pattern id="inheritPattern" href="#stripePattern"
+             patternUnits="userSpaceOnUse"
+             x="0" y="0" width="20" height="20">
+      <!-- No children here -->
+    </pattern>
+  </defs>
+
+  <rect x="10" y="10" width="180" height="180"
+        fill="url(#inheritPattern)"/>
+</svg>

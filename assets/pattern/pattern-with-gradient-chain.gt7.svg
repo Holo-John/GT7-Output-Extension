@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" xmlns="http://www.w3.org/2000/svg" xmlns:svg="http://www.w3.org/2000/svg" width="200" height="200" version="1.1" id="svg3">
+  <sodipodi:namedview id="namedview3" pagecolor="#ffffff" bordercolor="#000000" borderopacity="0.25"/>
+  <defs id="defs2">
+    <linearGradient gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="1.414" id="L1"><stop offset="0" stop-color="blue"/>
+      <stop offset="1" stop-color="green"/>
+    </linearGradient></defs>
+  <path d="M 10 10 L 10 190 L 190 190 L 190 10 L 10 10 Z" fill="url(#L1)" id="P3"/><rect x="10" y="10" width="180" height="180" fill="none" id="rect3"/>
+</svg>

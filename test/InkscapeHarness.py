@@ -1,3 +1,4 @@
+from gt7_output import GT7Output
 import io
 import os
 import tempfile
@@ -11,8 +12,12 @@ from typing import cast, Tuple
 import matplotlib.pyplot as plt
 import sys
 import inspect
+import shutil
+import pathlib
 
 INKSCAPE = r"C:\Program Files\Inkscape\bin\inkscape.exe"
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+ASSETS_ROOT = PROJECT_ROOT / "assets" / "output"
 
 # Ensure Inkex uses the same executable when it shells out to Inkscape.
 os.environ.setdefault("INKSCAPE_EXE", INKSCAPE)
@@ -65,7 +70,6 @@ def run_extension_on_svg(extension_class, svg_path, strip_alpha=False, rounding_
 
     # 7. Return SVG text
     return output_stream.getvalue()
-
 
 
 def render_svg_to_png(svg_path, png_path):
@@ -198,4 +202,49 @@ def assert_gt7_compliant_svg_tree(svg_root):
     # If we reach here, the file is compliant
     return True
 
+
+def clean_dir(path: pathlib.Path):
+    if not path.exists():
+        return
+
+    for item in path.iterdir():
+        if item.is_file():
+            item.unlink()
+        elif item.is_dir():
+            shutil.rmtree(item)
+
+
+def run_gt7_test(test_source: str, case_name: str, svg_path: pathlib.Path):
+    artifact_dir = pathlib.Path(ASSETS_ROOT) / test_source / case_name
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    clean_dir(artifact_dir)
+
+    output_gt7_svg = artifact_dir / svg_path.with_suffix(".gt7.svg").name
+    input_png      = artifact_dir / "input.png"
+    output_png     = artifact_dir / "output.gt7.png"
+    diff_png       = artifact_dir / "diff.png"
+
+    # Run GT7 exporter
+    result = run_extension_on_svg(GT7Output, svg_path)
+    output_gt7_svg.write_text(result, encoding="utf-8")
+
+    # Copy logs + input SVG
+    log_file = pathlib.Path(tempfile.gettempdir()) / "gt7_export.log"
+    shutil.copy(str(log_file), artifact_dir / log_file.name)
+    shutil.copy(str(svg_path), artifact_dir / svg_path.name)
+
+    # Render expected + actual
+    render_svg_to_png(str(svg_path), str(input_png))
+    render_svg_to_png(str(output_gt7_svg), str(output_png))
+
+    # Compare
+    score, diff = compare_images(str(input_png), str(output_png))
+    print(f"SSIM score for {case_name}: {score}")
+
+    save_diff_image(diff, diff_png)
+
+    if score <= 0.90:
+        raise AssertionError(f"Gradient test '{case_name}' failed (SSIM={score})")
+
+    assert_gt7_compliant_file(output_gt7_svg)
 
