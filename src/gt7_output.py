@@ -4157,11 +4157,14 @@ class GT7Output(inkex.OutputExtension):
 
             clone = node.copy()
 
-            elem_id = f"{prefix}{i}"
+            if callable(prefix):
+                elem_id = prefix(i, node)
+            else:
+                elem_id = f"{prefix}{i}"
+
             clone.set("id", elem_id)
 
             self.copy_presentation_attributes(node, clone)
-
             root.append(clone)
 
             # IMPORTANT: rebind using root, not doc
@@ -4211,34 +4214,41 @@ class GT7Output(inkex.OutputExtension):
             return png_bytes
 
 
-    def svg_for_multy_path_intersection(self, cp, path_list, prefix="multi"):
+    def svg_for_multi_path_intersection(self, cp, path_list):
         """
         Build an SVG containing:
-        - cp0: original clipPath
-        - cp1..cpN: duplicates of cp for each path except the first
-        - p0..pN: the paths to intersect with cp
+        - cp0..cpN: clip rectangles (one per tile)
+        - p0..pN: tile paths
         Returns (doc, cp_ids, path_ids)
         """
 
         nodes = []
 
-        # cp0 = original clipPath
-        nodes.append(cp)
-
-        # cp1..cpN = duplicates
-        for _ in range(1, len(path_list)):
-            nodes.append(cp.copy())
-
-        # p0..pN = paths
+        # p0..pN = tile paths
         for p in path_list:
-            nodes.append(p)
+            p_copy = p.copy()
+            nodes.append(p_copy)
+        
+        # cp0..cpN = duplicates of cp
+        for i in range(len(path_list)):
+            cp_copy = cp.copy()
+            nodes.append(cp_copy)
 
-        # Reuse your existing builder
-        doc, ids = self.build_svg_for_actions(nodes, prefix)
+        num_paths = len(path_list)
 
-        # Split IDs into cp_ids and path_ids
-        cp_ids = ids[:len(path_list)]
-        path_ids = ids[len(path_list):]
+        # prefix function knows how many cp nodes exist
+        def prefix(i, node):
+            if i < num_paths:
+                return f"p{i - num_paths}"
+            else:
+                return f"cp{i}"
+
+        # Build SVG with functional prefix
+        doc, ids = self.build_svg_for_actions(nodes, prefix=prefix)
+
+        # Split IDs
+        cp_ids = ids[:num_paths]
+        path_ids = ids[num_paths:]
 
         return doc, cp_ids, path_ids
 
@@ -4255,14 +4265,14 @@ class GT7Output(inkex.OutputExtension):
         actions = []
 
         for cp_id, pid in zip(cp_ids, path_ids):
-            actions.append(f"select-by-id:{cp_id}")
             actions.append(f"select-by-id:{pid}")
+            actions.append(f"select-by-id:{cp_id}")
             actions.append("path-intersection")
             actions.append("select-clear")
 
         return ";".join(actions)
     
-    
+
     def multi_path_intersection(self, cp, path_list):
         """
         Perform multi-intersection in a single Inkscape invocation.
@@ -4270,7 +4280,7 @@ class GT7Output(inkex.OutputExtension):
         """
 
         # 1. Build SVG with cp duplicates + paths
-        doc, cp_ids, path_ids = self.svg_for_multy_path_intersection(cp, path_list)
+        doc, cp_ids, path_ids = self.svg_for_multi_path_intersection(cp, path_list)
         root = doc.getroot()
         svg_input = inkex.etree.tostring(root, encoding="unicode")
         self.log(logging.DEBUG,f"Inkscape input:\n {svg_input}")
@@ -4294,20 +4304,26 @@ class GT7Output(inkex.OutputExtension):
         self.log(logging.DEBUG,f"Inkscape output:\n {inkex.etree.tostring(result_root)}")
 
         # 7. Wrap each result into a new PathElement
-        orig_tile_by_id = {tile.get("id"): tile for tile in path_list}
+        orig_tile_by_id = {
+            node.get("id"): node
+            for node in root.iter()
+            if node.get("id") is not None
+        }
+
 
         results = []
         for p in out_paths:
-            self.log(logging.DEBUG, f"Clipped {self.node_str(p)}")
             new_p = inkex.PathElement()
             new_p.set("d", p.get("d"))
 
             orig = orig_tile_by_id.get(p.get("id"))
+            self.log(logging.DEBUG, f"Attributes={self.node_str(orig)} for node {self.node_str(new_p)}")
             if orig is not None:
                 self.copy_presentation_attributes(orig, new_p)
 
-            self.copy_presentation_attributes(p, new_p)
             results.append(new_p)
+
+            self.log(logging.DEBUG, f"Clipped {self.node_str(p)}")
 
         self.log(logging.DEBUG, f"{len(results)} clipped paths extracted from output")
 
