@@ -3706,8 +3706,6 @@ class GT7Output(inkex.OutputExtension):
 
         clip_shape = copy.deepcopy(el) 
         clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
-        clip_shape.attrib.pop("fill", None)   # ← Clip against untransformed shapes
-        clip_shape.attrib.pop("stroke", None)   # ← Clip against untransformed shapes
 
         parent, idx = self.parent_of(el)
 
@@ -3718,13 +3716,13 @@ class GT7Output(inkex.OutputExtension):
             if clone is None:
                 continue
 
+            self.copy_presentation_attributes(node, clone)
+
             # tile transform only
             tile_t = inkex.Transform().add_translate(dx, dy)
             self.transform_path(clone, tile_t)
             
             self.log(logging.DEBUG, f"Appending tile {self.node_str(clone)}")
-
-            self.copy_presentation_attributes(node, clone)
             merged.append(element=clone)
 
             self.log(logging.DEBUG, f"merged = {self.node_str(merged)}, children = {len(list(merged))}")
@@ -4264,6 +4262,7 @@ class GT7Output(inkex.OutputExtension):
 
         return ";".join(actions)
     
+    
     def multi_path_intersection(self, cp, path_list):
         """
         Perform multi-intersection in a single Inkscape invocation.
@@ -4295,14 +4294,17 @@ class GT7Output(inkex.OutputExtension):
         self.log(logging.DEBUG,f"Inkscape output:\n {inkex.etree.tostring(result_root)}")
 
         # 7. Wrap each result into a new PathElement
+        orig_tile_by_id = {tile.get("id"): tile for tile in path_list}
+
         results = []
         for p in out_paths:
             self.log(logging.DEBUG, f"Clipped {self.node_str(p)}")
             new_p = inkex.PathElement()
             new_p.set("d", p.get("d"))
 
-            if hasattr(p, "path"):
-                new_p.path = p.path
+            orig = orig_tile_by_id.get(p.get("id"))
+            if orig is not None:
+                self.copy_presentation_attributes(orig, new_p)
 
             self.copy_presentation_attributes(p, new_p)
             results.append(new_p)
