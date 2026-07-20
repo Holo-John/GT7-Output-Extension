@@ -5,7 +5,7 @@ from InkscapeHarness import (
     run_gt7_test
 )
 
-TEST_SUITE = pathlib.Path("assets/text_and_styling")
+TEST_SUITE = pathlib.Path("assets/text_and_symbols")
 
 def discover_svg_files():
     """Yield (case_name, svg_path) for each SVG file in the suite directory."""
