@@ -16,5 +16,5 @@ def discover_svg_files():
 
 
 @pytest.mark.parametrize("case_name, svg_path", list(discover_svg_files()))
-def test_clippaths_case(case_name, svg_path):
+def test_svg_case(case_name, svg_path):
     run_gt7_test(TEST_SUITE.name, case_name, svg_path, thresholds=GRADIENT_THRESHOLDS)

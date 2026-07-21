@@ -1371,7 +1371,7 @@ class GT7Output(inkex.OutputExtension):
 
         return 0
 
-    def resolve_references(self):
+    def resolve_references(self, node=None):
         grad_count = 0
         clip_count = 0
         filter_count = 0
@@ -1379,7 +1379,10 @@ class GT7Output(inkex.OutputExtension):
         pattern_count = 0
         marker_count = 0
 
-        for el in list(self.svg.iter()):
+        if node is None:
+            node = self.svg
+
+        for el in list(node.iter()):
             tag = self.tag_name(el)
 
             match tag:
@@ -3227,11 +3230,9 @@ class GT7Output(inkex.OutputExtension):
         svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
 
         for attr in ("fill", "stroke"):
-            grad, grad_id = self.ref_target(shape, attr)
-            
             self.log(logging.DEBUG, f"Shape = {self.node_str(shape)}")
 
-            grad = self.find_node(grad_id)
+            grad, grad_id = self.ref_target(shape, attr)
             if grad is None:
                 self.log(logging.DEBUG, f"{attr} reference {grad_id} not found in SVG tree")
                 continue
@@ -3254,12 +3255,12 @@ class GT7Output(inkex.OutputExtension):
             new_grad = self.clone_gradient(grad)
             self.log(logging.DEBUG, f"  Cloned gradient has id={new_grad.get('id')}")
 
-            # normailze coordinates to userSpace
-            self.normalize_gradient_units(new_grad, shape)
-
             # resolve chain on the cloned gradient, get chain transform
             T_chain = self.resolve_gradient_chain(new_grad)
             self.log(logging.DEBUG, f"[GRADIENT]   T_chain for {shape.get('id')}: {T_chain}")
+
+            # normailze coordinates to userSpace
+            self.normalize_gradient_units(new_grad, shape)
 
             # apply chain transform (shape transform is handled later in apply_all_transforms)
             self.apply_gradient_transform_matrix(new_grad, T_chain)
@@ -3478,11 +3479,6 @@ class GT7Output(inkex.OutputExtension):
             geom = self.resolve_pattern_geometry(child, transform)
             if geom is None:
                 continue
-            
-            geoms = geom if isinstance(geom, list) else [geom]
-            for item in geoms:
-                self.resolve_clippath_for_shape(item)
-                self.resolve_gradient_for_shape(item)
 
             self.log(logging.DEBUG,f"Adding {str(geom)}")
             self.add_geom_preserving_zorder(parts, geom)
@@ -3523,6 +3519,7 @@ class GT7Output(inkex.OutputExtension):
             geom = self.convert_to_path(node, M)
             if not geom is None:
                 geom.attrib.pop("transform", None)
+                self.resolve_references(geom)
 
                 # Remove nested patterns
                 pattern, id = self.ref_target(geom, "fill")
@@ -3540,6 +3537,7 @@ class GT7Output(inkex.OutputExtension):
                 if p is None:
                     continue
                 
+                #copy group presentation attributes
                 self.copy_presentation_attributes(node, p, override=False)
 
                 if isinstance(p, list):
@@ -3709,7 +3707,7 @@ class GT7Output(inkex.OutputExtension):
 
         parent, idx = self.parent_of(el)
 
-        merged = inkex.Group()
+        group = inkex.Group()
 
         for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
             clone = self.convert_to_path(node)
@@ -3720,34 +3718,53 @@ class GT7Output(inkex.OutputExtension):
 
             # tile transform only
             tile_t = inkex.Transform().add_translate(dx, dy)
+
+            for pa in ["fill", "stroke"]:
+                gradient, id = self.ref_target(node, pa)
+                self.log(logging.DEBUG, f"{pa} = {self.node_str(gradient)}")
+
+                if not gradient is None and self.tag_name(gradient).upper().endswith("GRADIENT"):
+                    self.log(logging.DEBUG, f"Original gradient = {self.node_str(gradient)}")
+
+                    gradient_clone = self.clone_gradient(gradient)
+                    gradient_clone.attrib.pop("id", None)
+                    self.apply_transform_to_gradient(gradient_clone, tile_t)
+                    defs = self.ensure_defs()
+                    self.add_node(gradient_clone, defs)
+                    clone.set(pa, f"url(#{gradient_clone.get('id')})")
+
+                    self.log(logging.DEBUG, f"Transformed gradient = {self.node_str(gradient_clone)}")
+
+            # tile transform only
+            tile_t = inkex.Transform().add_translate(dx, dy)
             self.transform_path(clone, tile_t)
             
             self.log(logging.DEBUG, f"Appending tile {self.node_str(clone)}")
-            merged.append(element=clone)
+            group.append(element=clone)
 
-            self.log(logging.DEBUG, f"merged = {self.node_str(merged)}, children = {len(list(merged))}")
+            self.log(logging.DEBUG, f"appended = {self.node_str(group)}, children = {len(list(group))}")
 
 
-        if merged is None:
+        if group is None:
             return 0
 
         # apply patternTransform ONCE
         
         if not pattern_t is None:
-            self.apply_transform_to_node(merged, pattern_t)
+            self.apply_transform_to_node(group, pattern_t)
 
-        tiles = list(merged) 
+        tiles = list(group) 
         clipped_tiles = self.multi_path_intersection(clip_shape, tiles)
 
         self.log(logging.DEBUG, f"{len(clipped_tiles)} tiles clipped")
         
-        merged.clear()
+        group.clear()
         
         for tile in clipped_tiles:
             self.log(logging.DEBUG, f"Intersected tile {self.node_str(tile)}")
-            merged.append(tile)
+            group.append(tile)
 
-        self.add_node(merged, parent, idx)
+        self.add_node(group, parent, idx)
 
         return 1
 
