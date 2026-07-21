@@ -3642,18 +3642,6 @@ class GT7Output(inkex.OutputExtension):
     def merge_tiles(self, node, el, pattern):
         count = 0
 
-        # 3. Pattern transform
-        raw_pt = pattern.get("patternTransform")
-        pattern_t = inkex.Transform(raw_pt) if raw_pt else None
-
-        # 4. Collect tiles grouped by presentation
-        el_t = Transform(el.get("transform")) if el.get("transform") else None
-
-        clip_shape = copy.deepcopy(el) 
-        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
-
-        parent, idx = self.parent_of(el)
-
         merged = None
 
         for r, c, dx, dy in self.iter_pattern_tiles(el, pattern):
@@ -3677,35 +3665,39 @@ class GT7Output(inkex.OutputExtension):
         if merged is None:
             return 0
 
-        # apply patternTransform ONCE
+        # apply patternTransform
+        raw_pt = pattern.get("patternTransform")
+        pattern_t = inkex.Transform(raw_pt) if raw_pt else None
         
         if not pattern_t is None:
             self.apply_transform_to_node(merged, pattern_t)
 
         self.log(logging.DEBUG, f"Raw {self.node_str(merged)}")
+        clip_shape = copy.deepcopy(el) 
+        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
         clipped_path = self.path_intersection(merged, clip_shape)
         self.copy_presentation_attributes(node, clipped_path)
         self.log(logging.DEBUG, f"Intersected {self.node_str(clipped_path)}")
 
+        # apply elementTransform
+        el_t = Transform(el.get("transform")) if el.get("transform") else None
+
         if not el_t is None:
             clipped_path.set("transform", el_t)
+
+        parent, idx = self.parent_of(el)
         self.add_node(clipped_path, parent, idx)
         
         return 1
     
 
     def append_tiles(self, node, el, pattern):
-        # 3. Pattern transform
+        
         raw_pt = pattern.get("patternTransform")
-        pattern_t = inkex.Transform(raw_pt) if raw_pt else None
+        pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
 
-        # 4. Collect tiles grouped by presentation
-        el_t = Transform(el.get("transform")) if el.get("transform") else None
-
-        clip_shape = copy.deepcopy(el) 
-        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
-
-        parent, idx = self.parent_of(el)
+        raw_et = el.get("transform")
+        el_t = Transform(raw_et) if raw_et else inkex.Transform()
 
         group = inkex.Group()
 
@@ -3718,6 +3710,8 @@ class GT7Output(inkex.OutputExtension):
 
             # tile transform only
             tile_t = inkex.Transform().add_translate(dx, dy)
+            gradient_t = tile_t @ pattern_t @ el_t
+            total_t = pattern_t @ tile_t
 
             for pa in ["fill", "stroke"]:
                 gradient, id = self.ref_target(node, pa)
@@ -3728,7 +3722,8 @@ class GT7Output(inkex.OutputExtension):
 
                     gradient_clone = self.clone_gradient(gradient)
                     gradient_clone.attrib.pop("id", None)
-                    self.apply_transform_to_gradient(gradient_clone, tile_t)
+                    self.apply_transform_to_gradient(gradient_clone, total_t)
+            
                     defs = self.ensure_defs()
                     self.add_node(gradient_clone, defs)
                     clone.set(pa, f"url(#{gradient_clone.get('id')})")
@@ -3737,7 +3732,7 @@ class GT7Output(inkex.OutputExtension):
 
             # tile transform only
             tile_t = inkex.Transform().add_translate(dx, dy)
-            self.transform_path(clone, tile_t)
+            self.transform_path(clone, total_t)
             
             self.log(logging.DEBUG, f"Appending tile {self.node_str(clone)}")
             group.append(element=clone)
@@ -3748,12 +3743,9 @@ class GT7Output(inkex.OutputExtension):
         if group is None:
             return 0
 
-        # apply patternTransform ONCE
-        
-        if not pattern_t is None:
-            #self.apply_transform_to_node(group, pattern_t)
-            node.set("transform", pattern_t)
-
+        # clipping
+        clip_shape = copy.deepcopy(el) 
+        clip_shape.attrib.pop("transform", None)   # ← Clip against untransformed shapes
         tiles = list(group) 
         clipped_tiles = self.multi_path_intersection(clip_shape, tiles)
 
@@ -3765,6 +3757,12 @@ class GT7Output(inkex.OutputExtension):
             self.log(logging.DEBUG, f"Intersected tile {self.node_str(tile)}")
             group.append(tile)
 
+        # set element transform
+        
+        self.log(logging.DEBUG, f"element transform = {str(el_t)}")
+        group.set("transform", el_t)
+
+        parent, idx = self.parent_of(el)
         self.add_node(group, parent, idx)
 
         return 1

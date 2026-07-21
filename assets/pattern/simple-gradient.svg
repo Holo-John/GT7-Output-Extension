@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+  <defs>
+    <!-- Plain gradient (no href) -->
+    <linearGradient id="plainGrad" x1="0" y1="0" x2="1" y2="1"
+                    gradientTransform="rotate(45)">
+      <stop offset="0" stop-color="blue"/>
+      <stop offset="1" stop-color="green"/>
+    </linearGradient>
+
+    <!-- Pattern using the plain gradient -->
+    <pattern id="patternPlain" patternUnits="userSpaceOnUse"
+             x="0" y="0" width="40" height="40">
+      <rect width="40" height="40" fill="url(#plainGrad)"/>
+    </pattern>
+  </defs>
+
+  <!-- Rectangle filled with the pattern -->
+  <rect x="10" y="10" width="180" height="180"
+        fill="url(#patternPlain)" />
+</svg>
