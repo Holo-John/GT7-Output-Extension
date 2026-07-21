@@ -3751,7 +3751,8 @@ class GT7Output(inkex.OutputExtension):
         # apply patternTransform ONCE
         
         if not pattern_t is None:
-            self.apply_transform_to_node(group, pattern_t)
+            #self.apply_transform_to_node(group, pattern_t)
+            node.set("transform", pattern_t)
 
         tiles = list(group) 
         clipped_tiles = self.multi_path_intersection(clip_shape, tiles)
