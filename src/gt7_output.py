@@ -7797,10 +7797,12 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         triangles = []
         for i in range(cols):
             for j in range(rows):
-                xL = x0 + i * dx
-                xR = x0 + (i + 1) * dx
-                yB = y0 + j * dy
-                yT = y0 + (j + 1) * dy
+                # Round coordinates to a fixed precision, overlap by epsilon
+                epsilon = 0 #TODO determine right number for epsilon, aka is this needed for GT7
+                xL = round(x0 + i * dx - epsilon, self.options.rounding_precision)
+                xR = round(x0 + (i + 1) * dx + epsilon, self.options.rounding_precision)
+                yB = round(y0 + j * dy - epsilon, self.options.rounding_precision)
+                yT = round(y0 + (j + 1) * dy + epsilon, self.options.rounding_precision)
 
                 # Triangle A: bottom-left, bottom-right, top-right
                 d_a = f"M {xL},{yB} L {xR},{yB} L {xR},{yT} Z"
