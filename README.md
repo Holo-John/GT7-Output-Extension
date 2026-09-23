@@ -15,4 +15,7 @@ If you want to modify the code, follow these steps to setup your devenv:
 
 4. Setup the .venv environment required for testing:
    - In Visual Studio Code, press <CTRL>+<SHIFT>+<P>
-   - Enter Tasks: Run Task
+   - Enter Tasks: Run Task (follow autocompletion)
+   - Enter GT7: Setup .venv (follow autocompletion)
+
+   This will create a .venv folder with a python environment needed for running tests and Visual Studio Code tasks. The python modules listed in requirements.txt will be pip installed automatically into the environment.
