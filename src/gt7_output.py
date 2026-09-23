@@ -4791,6 +4791,43 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # region --- Geometry ---
 
+    def rgba_to_hex(self, r: float|int, g: float|int, b: float|int, a:float|int|None=None) -> str:
+        """
+        Convert RGBA floats (0-1 float or 0-255 int) into a hex string.
+        If alpha is omitted, output #RRGGBB.
+        If alpha is provided, output #RRGGBBAA.
+        """
+
+        # Convert RGB floats in 0–1 range to 0–255
+        def normalize(c):
+            # Case 1: explicit integer → always 0–255
+            if isinstance(c, int):
+                return max(0, min(255, c))
+
+            # Case 2: normalized float (0–1)
+            if isinstance(c, float) and 0.0 <= c <= 1.0:
+                return max(0, min(255, int(round(c * 255.0))))
+
+            # Case 3: scaled float (1–255)
+            if isinstance(c, float) and 1.0 < c <= 255.0:
+                return max(0, min(255, int(round(c))))
+
+            # Case 4: overshoot → clamp
+            return 255
+
+        R = normalize(r)
+        G = normalize(g)
+        B = normalize(b)
+
+        hex_rgb = f"#{R:02x}{G:02x}{B:02x}"
+
+        if a is not None:
+            A = normalize(a)
+            hex_rgb += f"{A:02x}"
+
+        return hex_rgb
+
+        
 
     def parse_color(self, color: str) -> tuple[str | None, int]:
         """
@@ -7421,7 +7458,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             a = a / 255.0
 
         # Hex color without alpha (GT7-safe, Inkscape-safe)
-        hex_rgb = f"#{r:02x}{g:02x}{b:02x}"
+        hex_rgb = self.rgba_to_hex(r, g, b)
 
         # Alpha as stop-opacity (CSS/SVG spec)
         stop_opacity = f"{a:.6f}"
@@ -7532,7 +7569,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             # Find vertex pair with maximum colour difference.
             #
             vertex_colors = {
-                p: evaluator.color_at_xy(p[0], p[1])
+                p: evaluator.color_at_point(p[0], p[1])
                 for p in unique_pts
             }
 
@@ -7560,8 +7597,8 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         #
         # Sample endpoint colours.
         #
-        c0 = evaluator.color_at_xy(*p0)
-        c1 = evaluator.color_at_xy(*p1)
+        c0 = evaluator.color_at_point(*p0)
+        c1 = evaluator.color_at_point(*p1)
 
         self.log(
             logging.DEBUG,
@@ -7587,7 +7624,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         return gid
 
-    def colorize_clipped_triangles(self, shape:BaseElement, attr:str, gradient:MeshGradient, triangles:list[PathElement]) -> None:
+    def colorize_clipped_triangles(self, shape:BaseElement, gradient:MeshGradient, triangles:list[PathElement]) -> None:
         """
         Apply clipped-triangle gradient coloring by generating a local linearGradient
         for each triangle and assigning it to the specified presentation attribute.
@@ -7607,7 +7644,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         for t in triangles:
             gid = self.build_clipped_gradient(t, evaluator)
-            t.set(attr, self.node_or_id_to_url(gid))
+            t.set("fill", self.node_or_id_to_url(gid))
 
 
     def replace_meshgradient_on_group(self, group:Group, attr:str, mg:MeshGradient) -> None:
@@ -7667,11 +7704,43 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return rows, cols
 
 
-    def replace_meshgradient(self, shape:BaseElement, attr:str, mg:MeshGradient) -> List[PathElement]:
+    def replace_meshgradient(self, shape:BaseElement, attr:str, mg:MeshGradient) -> List[PathElement] | None:
         """
-        Replace a meshgradient on a geometry element by decomposing the shape's
-        bounding box into a deterministic power-of-two triangle grid, clipping
-        each triangle to the shape, and assigning a per-triangle fallback
+        Replace a meshgradient on a geometry element. For strokes a single dominent color
+        is set, while filling is replaced by triangulating the shape into a power-of-two 
+        triangle grid, clipping each triangle to the shape, and assigning a per-triangle fallback
+        linearGradient derived from local meshgradient color variation.
+
+        Returns the list of triangles that replaced the shape or None if the shape was neither removed
+        nor replaced.
+        """
+        if attr == "stroke":
+            self.replace_stroke_meshgradient(shape, mg)
+            return None
+        else:
+            return self.replace_fill_meshgradient(shape, mg)
+
+
+    def replace_stroke_meshgradient(self, shape:BaseElement, mg:MeshGradient) -> None:
+        """
+        Replace a MeshGradient stroke with a single color - the dominant colot of the
+        MeshGradient.
+        """
+        eval = MeshGradientEvaluator(mg, shape, self)
+
+        rgba = eval.dominant_color()
+        r = int(rgba[0])
+        g = int(rgba[1])
+        b = int(rgba[2])
+
+        color = self.rgba_to_hex(r, g, b)
+        shape.set("stroke", color)
+
+
+    def replace_fill_meshgradient(self, shape:BaseElement, mg:MeshGradient) -> List[PathElement]:
+        """
+        Replace a meshgradient on a geometry element by triangulating the shape into a power-of-two 
+        triangle grid, clipping each triangle to the shape, and assigning a per-triangle fallback
         linearGradient derived from local meshgradient color variation.
 
         The procedure consists of:
@@ -7703,7 +7772,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         The function returns the list of clipped triangle PathElements, each
         already colorized with a GT7-safe fallback gradient.
         """
-
 
         n_div = self.options.mesh_divisions
         self.log(logging.DEBUG, f"Mesh divisions={n_div}")
@@ -7748,12 +7816,12 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         self.log(logging.DEBUG, f"Generated {len(triangles)} triangles for n_div={n_div}")
 
-        # --- Step 4: clip all triangles to the whale shape ---
+        # --- Step 4: clip all triangles to the shape ---
         clipped = self.path_intersection(shape, triangles)
         self.log(logging.DEBUG, f"{len(clipped)} clipped triangles after intersection")
 
         # --- Step 5: basic styling (black fill / white stroke for inspection) ---
-        self.colorize_clipped_triangles(shape, attr, mg, clipped)
+        self.colorize_clipped_triangles(shape, mg, clipped)
 
         # Add clipped triangles to DOM
         fill_pos, stroke_pos, _ = self.parse_paint_order(shape)
@@ -7767,7 +7835,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.add_node(p, parent, idx)
 
         # Make shape transparent
-        shape.set(attr, "none")
+        shape.set("fill", "none")
         if not self.is_geometry_visible(shape):
             self.remove_node(shape)
 
@@ -11394,8 +11462,66 @@ class MeshGradientEvaluator:
             self.color_lattice[t + 1][n + 1],
         )
 
+    def dominant_color(self, sample_count:float=64) -> tuple[float, float, float, float]:
+        """
+        Estimate a representative (dominant) color for the mesh gradient by
+        sampling its color field at multiple points across the gradient's
+        bounding box.
 
-    def color_at_xy(self, x: float, y: float) -> tuple[float, float, float, float]:
+        This method is intended for fallback scenarios where a mesh gradient
+        cannot be applied directly (e.g., strokes referencing mesh gradients,
+        where triangulation and clipping produce degenerate or empty patches).
+        Instead of attempting geometric subdivision, the gradient is probed
+        at a uniform grid of sample locations. Each sample is resolved through
+        the evaluator's existing patch lookup and interpolation pipeline.
+
+        The returned color is the arithmetic mean of all successfully sampled
+        RGBA values. Because mesh gradients are smooth by construction, a
+        coarse grid (e.g., 8x8 samples) provides a stable and visually
+        meaningful approximation of the gradient's overall appearance.
+
+        Parameters
+        ----------
+        sample_count : int
+            Total number of samples to take across the gradient domain.
+            Must be a perfect square (e.g., 16, 25, 36, 49, 64). The square
+            root defines the grid resolution.
+
+        Returns
+        -------
+        tuple[float, float, float, float]
+            The averaged RGBA color in normalized 0-1 range. RGB (color)
+            are scaled 0..255, A (alpha) 0..1. If no samples can be resolved 
+            (e.g., malformed mesh), returns (0, 0, 0, 0).
+        """
+
+        # 1. Determine sampling grid
+        n = int(sample_count ** 0.5)
+        xs = [i / (n - 1) for i in range(n)]
+        ys = [i / (n - 1) for i in range(n)]
+
+        colors = []
+
+        # 2. Sample mesh gradient
+        for y in ys:
+            for x in xs:
+                col = self.color_at_point(x, y)
+                if col is not None:
+                    colors.append(col)
+
+        if not colors:
+            return (0.0, 0.0, 0.0, 0.0)
+
+        # 3. Average RGBA
+        r = sum(c[0] for c in colors) / len(colors)
+        g = sum(c[1] for c in colors) / len(colors)
+        b = sum(c[2] for c in colors) / len(colors)
+        a = sum(c[3] for c in colors) / len(colors)
+
+        return (r, g, b, a)
+
+
+    def color_at_point(self, x: float, y: float) -> tuple[float, float, float, float]:
         """Return the RGBA color at a given point in user space.
 
         This samples the mesh gradient at coordinates (x, y). The point is first
@@ -11409,9 +11535,9 @@ class MeshGradientEvaluator:
             y: Y-coordinate in user space.
 
         Returns:
-            A 4-tuple representing the RGBA color at the given position. If the
-            point lies outside all mesh patches, a fully transparent black color
-            (0, 0, 0, 0) is returned.
+            A 4-tuple representing the RGBA color at the given position. RGB (color)
+            are scaled 0..255, A (alpha) 0..1. If the point lies outside all mesh patches, 
+            a fully transparent black color (0, 0, 0, 0) is returned.
         """
 
         bx, by, _, _ = self.bbox

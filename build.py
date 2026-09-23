@@ -16,7 +16,7 @@ FILES_TO_BUNDLE = FILES_TO_INSTALL + ("license.txt", "manual")
 BUNDLE_FILE = "gt7_exporter_bundle.zip"
 
 
-def load_environment() -> None:
+def _load_environment() -> None:
     env_path = ROOT / ".env"
     if not env_path.exists():
         return
@@ -35,7 +35,7 @@ def load_environment() -> None:
         os.environ.setdefault(key, value)
 
 
-def bundle_files(
+def _bundle_files(
     workspace_dir: str | Path = ROOT,
     source_dir: str | Path | None = None,
     output_dir: str | Path = DIST_DIR,
@@ -73,13 +73,13 @@ def bundle_files(
     return archive_path
 
 
-def install_extension_files(
+def deploy(
     workspace_dir: str | Path = ROOT,
     target_dir: str | Path | None = None,
     source_dir: str | Path | None = None,
     verbose: bool = False,
 ) -> Path:
-    load_environment()
+    _load_environment()
     workspace_dir = Path(workspace_dir)
     if source_dir is None:
         source_dir = workspace_dir / "src"
@@ -121,7 +121,7 @@ def build_release_bundle(
     output_dir: str | Path = DIST_DIR,
     verbose: bool = False,
 ) -> Path:
-    return bundle_files(workspace_dir=workspace_dir, output_dir=output_dir, verbose=verbose)
+    return _bundle_files(workspace_dir=workspace_dir, output_dir=output_dir, verbose=verbose)
 
 
 def setup_environment(
@@ -188,7 +188,7 @@ def main() -> None:
         return
 
     if args.command == "deploy":
-        install_target = install_extension_files(target_dir=args.target_dir, source_dir=args.source_dir, verbose=args.verbose)
+        install_target = deploy(target_dir=args.target_dir, source_dir=args.source_dir, verbose=args.verbose)
         print(f"Deployed to: {install_target}")
         return
 

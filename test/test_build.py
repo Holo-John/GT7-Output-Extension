@@ -55,7 +55,7 @@ def test_deploy_extension_files_copies_to_target_dir(temp_workspace):
     target_dir = temp_workspace[0] / "extensions"
     target_dir.mkdir()
 
-    build.install_extension_files(workspace, target_dir)
+    build.deploy(workspace, target_dir)
 
     assert (target_dir / "gt7_output.py").read_text(encoding="utf-8") == "print('py')\n"
     assert (target_dir / "gt7_output.inx").read_text(encoding="utf-8") == "<inkscape-extension />\n"
@@ -70,7 +70,7 @@ def test_deploy_extension_files_requires_env_target_when_not_explicit(monkeypatc
     monkeypatch.setenv("INKSCAPE_EXTENSIONS_DIR", "   ")
 
     with pytest.raises(ValueError, match="INKSCAPE_EXTENSIONS_DIR"):
-        build.install_extension_files(workspace)
+        build.deploy(workspace)
 
 
 def test_load_environment_reads_dotenv_file_without_python_dotenv(monkeypatch, tmp_path):
@@ -87,7 +87,7 @@ def test_load_environment_reads_dotenv_file_without_python_dotenv(monkeypatch, t
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
 
-    build.load_environment()
+    build._load_environment()
 
     assert os.environ["INKSCAPE_EXTENSIONS_DIR"] == "C:/temp/extensions"
 

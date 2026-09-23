@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200"
+     viewBox="0 0 200 200"
+     xmlns="http://www.w3.org/2000/svg"
+     xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape">
+
+  <defs>
+    <meshgradient id="mg1" gradientUnits="userSpaceOnUse">
+      <meshrow>
+        <meshpatch>
+          <stop path="c 0,0 100,0 100,0" stop-color="#0033ff" stop-opacity="1"/>
+          <stop path="c 0,0 100,100 100,100" stop-color="#00ccff" stop-opacity="1"/>
+          <stop path="c 0,0 0,100 0,100" stop-color="#66ffff" stop-opacity="1"/>
+          <stop path="c 0,0 0,0 0,0" stop-color="#ffffff" stop-opacity="1"/>
+        </meshpatch>
+      </meshrow>
+    </meshgradient>
+  </defs>
+
+  <!-- Stroke uses meshgradient -->
+  <circle cx="100" cy="100" r="60"
+          fill="none"
+          stroke="url(#mg1)"
+          stroke-width="20"/>
+</svg>
+
