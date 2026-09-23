@@ -11,9 +11,11 @@ If you want to modify the code, follow these steps to setup your devenv:
 
 2. Checkout the repository to a local folder
 
-3. Open your local folder in Visual Studio Code
+3. Go to your local folder, and copy ".env.example" to ".env". Follow the instructions inside the file to enter necessary paths.
 
-4. Setup the .venv environment required for testing:
+4. Open your local folder in Visual Studio Code
+
+5. Setup the .venv environment required for testing:
    - In Visual Studio Code, press <CTRL>+<SHIFT>+<P>
    - Enter Tasks: Run Task (follow autocompletion)
    - Enter GT7: Setup .venv (follow autocompletion)
