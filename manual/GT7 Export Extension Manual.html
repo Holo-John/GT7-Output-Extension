@@ -94,53 +94,51 @@ along with this program. If not, see <a href="https://www.gnu.org/licenses/">htt
 
 <h2>About GT7 Export Extension</h2>
 <p>
-GT7 Output Extension (GT7OE) is an Inkscape extension that allows you to save any contents edited in Inkscape in a stripped down SVG 1.1 format that is compatible with the restrictions documented for the Gran Turismo 7 Livery Editor.
+GT7 Output Extension (GT7OE) is an Inkscape extension that allows you to save and convert any SVG 2.0 designs edited in Inkscape into an SVG 1.1 format that is compatible with the Gran Turismo 7 Livery Editor. The down-conversion is done as faithfully as possible, that means converted designs should visually look like the original design, but under the hood heavy modifications of the SVG DOM tree are performed.
 </p><p>
-The extension is distributed under GPL 3.0 which means it is free to use for private and commercial use. If you wish to create derivative work (e.g. adopt the source code for comercial SVG tools) you are required to either publish your work under a GPL 3.0 compatible license or seek permission from the author.
+The extension is distributed under GPL 3.0, which means you are free to use this software in a private and commercial context. If you wish to create derivative work (especially adopt the source code for commercial purposes) you are required to either publish your work under a GPL 3.0 compatible license or seek permission from the author.
 </p>
 
 <h2>Installation</h2>
 
-GT7OE can be installed in 4 simple steps. It is platform independent and requires a
-running Inkscape 1.4 installation as only prerequisite:
+GT7OE is platform independent and requires a running Inkscape 1.4 installation as prerequisite. The installation requires only a few simple steps:
 
 <ol>
-<li>Extract the contents of the <b>gt7_output.zip</b> archive </li>
+<li>Extract the contents of the <b>gt7_output.zip</b> archive.</li>
 <li>Open Inkscape, go to <b>Preferences</b></li>
-<li>Next to the <b>User extensions:</b> folder, push the <b>Open</b> button to open the folder in the file manager of your operating system</li>
-<li>Copy the files <i>gt7_output.inx</i> and <i>gt7_output.py</i> into the user extensions folder open in the file manager
+<li>Push the <b>Open</b> button next to the <b>User extensions:</b> folder. This will open the extensions folder in file manager of your operating system</li>
+<li>Copy the files <i>gt7_output.inx</i> and <i>gt7_output.py</i> into the user extensions folder that opened in the file manager.
 </ol>
 
 <h2>Using GT7OE</h2>
 
-Once GT7OE is successfully installed, you will see a new file type <i>.gt7</i> in the file save dialog of Inkscape:
+Once GT7OE is successfully installed, you will see a new file type <i>Gran Turismo 7 (.gt7)</i> in the file save dialog of Inkscape:
 
 <ol>
 <li>Edit your design or load an existing SVG file into Inkscape</li>
 <li>Go to <b>File</b> <b>Save As</b></li>
-<li>In the <b>Save as type</b> drop down box, select <b>Gran Turismo 7 (*.gt7)</b></li>
+<li>Open the <b>Save as type</b> drop down box and select <b>Gran Turismo 7 (*.gt7)</b></li>
 <li>Press <b>Save</b></li>
 <li>Press <b>OK</b> to accept the GT7OE options</li>
 </ol>
 <p>
 This will create a file with the extension <i>.gt7</i> at the location you selected in the <b>Save
 As</b> dialog. To import this file to the Gran Turismo Livery editor you need to
-have an account on <a href="https://www.gran-turismo.com">https://www.gran-turismo.com</a> and follow the instructions there. The Gran Turismo site accepts files with <i>.svg</i> extension, so you have to rename your file to e.g. <i>&ltfilename&gt.gt7.svg</i> accordingly.
+have an account on <a href="https://www.gran-turismo.com">https://www.gran-turismo.com</a> and follow the instructions there. The Gran Turismo site accepts only files with <i>.svg</i> extension, so you have to rename your file to e.g. <i>&ltfilename&gt.gt7.svg</i>.
 </p><p>
-To down convert SVG 2.0 content to SVG 1.1 (with additional restrictions) GT7OE needs to apply a lot of transformations of the original content, many of which are destructive. Hence it is strongly recommended to save content in the default Inkscape SVG format for backup and then to export it as <i>.gt7</i> file.
+To down convert SVG 2.0 content to SVG 1.1 (with additional restrictions required by Gran Turismo) GT7OE needs to apply a lot of transformations to the original content, many of which are destructive. Hence it is strongly recommended to save content in the default Inkscape SVG 2.0 format for backup and then to export it as <i>.gt7</i> file. GT7OE saves files with .gt7 extension (instead of .svg) to ensure that you do not accidentially overwrite your original designs.
 </p><p>
 GT7OE was tested on wide range of different SVG files, but the SVG specification is complex and the conversion may result in a visually
-different output. You can always load the <i>.gt7</i> file into Inkscape and edit it manually there to apply corrections, then safe it as <i>.gt7</i> file again.
+different output. You can always load the <i>.gt7</i> file into Inkscape and edit it manually there to apply corrections, then safe it again as <i>.gt7</i> file.
 <p>
 
 <h2>GT7OE Options</h2>
-Each time you safe your content as <i>.gt7</i> file, Inkscape will pop up the below dialog to
-allow you to change options for the conversion process.
+Each time you safe your content as <i>.gt7</i> file, Inkscape will pop up the below dialog to allow you to set parameters for the conversion process.
 
 <p>
 <img src="images/Parameter.png" alt="GT7 Export Screenshot" width="304" height="212">
 </p><p>
-Here comes the explanation of the available options:
+The defaults will do well for most designs, but if you wish to tweak or try new parameter settings, here is the explanation of the available fields:
 </p>
 <table>
   <thead>
@@ -156,21 +154,21 @@ Here comes the explanation of the available options:
     <tr>
       <td>Strip alpha from gradients</td>
       <td>
-        GT7 rejects linear and radial gradients whose color stops contain
-        transparency (alpha channel). When enabled, this option removes all
-        alpha values from gradient stops to ensure compatibility.
+        GT7 may reject linear and radial gradients whose color stops are (partially)
+        transparent (alpha channel). When this option is enabled, the stop opacity
+        will be set 1.0 (fully opaque) to ensure compatibility.
       </td>
       <td>True</td>
     </tr>
 
     <tr>
-      <td>Coordinate rounding</td>
+      <td>Coordinate rounding (decimal places)</td>
       <td>
         This option has two effects:
         <ul>
           <li>Reduces file size by shortening decimal precision.</li>
-          <li>Prevents GT7 rendering artifacts or crashes caused by paths with
-              extremely similar coordinates.</li>
+          <li>Prevents GT7 rendering artifacts or crashes of the Livery Editor caused by paths 
+              with extremely similar coordinates.</li>
         </ul>
       </td>
       <td>3</td>
@@ -180,8 +178,9 @@ Here comes the explanation of the available options:
       <td>Gradient mesh subdivision count</td>
       <td>
         Mesh gradient support is experimental. Shapes filled with mesh gradients
-        are subdivided into triangles, each rendered using a linear gradient.
-        Higher subdivision improves visual quality but increases file size.
+        are subdivided into triangles, each rendered using a linear gradient. A
+        higher subdivision count leads to more and smaller triangls, improving visual quality 
+		but increasing file size at the same time.
       </td>
       <td>4</td>
     </tr>
@@ -190,8 +189,8 @@ Here comes the explanation of the available options:
       <td>Compress exported GT7 file</td>
       <td>
         Produces a smaller, minified SVG. Disable this option if you prefer
-        human-readable output. GT7OE compression does not modify geometry.
-        External SVG compressors may reduce file size by an additional 20-30%.
+        human-readable output. Compression ios not very aggressive, and external SVG 
+		compressors may reduce file size by additional 20-40%.
       </td>
       <td>True</td>
     </tr>
@@ -203,8 +202,8 @@ Here comes the explanation of the available options:
 <h2>SVG Features Supported</h2>
 
 The
-following table shows the GT7OE support for various SVG 2.0 features and how
-they get converted into SVG 1.1
+following table shows the GT7OE support for various SVG 2.0 features and how faithfully
+they get converted into SVG 1.1.
 
 <table>
   <thead>
@@ -223,7 +222,7 @@ they get converted into SVG 1.1
         Geometry elements (&lt;rect&gt;, &lt;circle&gt;, &lt;ellipse&gt;, &lt;polygon&gt;, &lt;polyline&gt;, &lt;line&gt;, &lt;path&gt;)
       </td>
       <td>
-        Shapes are converted while retaining geometry and presentation attributes. &lt;rect&gt;, &lt;circle&gt;, and &lt;path&gt; are preserved when possible; all other geometry is converted to &lt;path&gt;.  
+        Shapes are converted retaining visible geometry and presentation attributes. &lt;rect&gt;, &lt;circle&gt;, and &lt;path&gt; are preserved when possible. All other geometry is converted to &lt;path&gt;.  
         <br><br>
         Because GT7OE removes all transforms, &lt;rect&gt; and &lt;circle&gt; may be replaced by &lt;path&gt; if complex transformations are applied.
       </td>
@@ -233,7 +232,7 @@ they get converted into SVG 1.1
       <td><img src="images/image003.png" alt="Supported"></td>
       <td>Styles</td>
       <td>
-        All styles (inline style attributes and CSS under &lt;style&gt;) are converted into plain presentation attributes.
+        All styles (inline style attributes and CSS styles under the <i>&lt;style&gt;)</i> section are converted into plain presentation attributes. Presentation attributes ignored by the Gran Turismo 7 Livery Editor are removed to reduce file size.
       </td>
     </tr>
 
@@ -251,7 +250,7 @@ they get converted into SVG 1.1
       <td>
         Stroke attributes are removed if stroke is <b>none</b> or stroke-width is zero to prevent GT7 from showing a default 1-pixel stroke.  
         <br><br>
-        Pure strokes (open paths) are retained unless clipping is required; in that case they are converted to closed paths.
+        Pure strokes (open paths) are retained unless clipping is required. In that case they are converted to closed paths.
       </td>
     </tr>
 
@@ -267,7 +266,7 @@ they get converted into SVG 1.1
       <td><img src="images/image003.png" alt="Supported"></td>
       <td>Clippath</td>
       <td>
-        clipPaths are resolved by clipping the visual geometry and removing the clipPath definition.
+        clippaths are resolved by clipping the visual geometry and removing the clippath attribute.
       </td>
     </tr>
 
@@ -275,30 +274,74 @@ they get converted into SVG 1.1
       <td><img src="images/image005.png" alt="Supported"></td>
       <td>Linear and radial gradients</td>
       <td>
-        Gradients are normalized
+        Gradients are normalized to user space coordinates (absolute coordinates), which requires to clone the gradient for each shape to which it is applied. This may increase file size. In usual designs the normalization and simplification of gradients will reduce file size.
 	  </td>
+	</tr>
+	
+	<tr>
+      <td><img src="images/image005.png" alt="Supported"></td>
+      <td>Mesh gradients</td>
+      <td>
+        Mesh gradients cannot be converted to SVG 1.1 without affecting the visual output. GT7OE triangulates shapes filled with mesh gradients and applies a linear gradient following the dominant color change within the triangle. The result usually looks patchy, but with manual post editing you may achieve asseptable results.
+	  <td>
+	</tr>
+	
+	<tr>
+      <td><img src="images/image005.png" alt="Supported"></td>
+      <td>Pattern</td>
+      <td>
+        Pattern are converted into plain geometry. This will increase file size, but for a reasonable number of tiles within the pattern you may achieve outputs that fit well into the 15 KB file size limitation of Gran Turismo.
+	  <td>
+	</tr>
+	
+	<tr>
+      <td><img src="images/image005.png" alt="Supported"></td>
+      <td>Marker</td>
+      <td>
+        Marker are converted into plain geometry. This will increase file size.
+	  <td>
+	</tr>
+	
+	<tr>
+      <td><img src="images/image005.png" alt="Supported"></td>
+      <td>Filter</td>
+      <td>
+        Filter are not supported and will be removed from the file.
+	  <td>
+	</tr>
+	
+	<tr>
+      <td><img src="images/image005.png" alt="Supported"></td>
+      <td>Masks</td>
+      <td>
+        Masks are not supported and will be removed from the file.
+	  <td>
 	</tr>
  </tbody>
 </table>
 
+As you can see, GT7OE can convert most SVG 2.0 features into SVG 1.1.
 
-The
-transformation process will resolve all transformations and remove all groups
+
+The conversion process will resolve all transformations and remove all groups
 from the output. The resulting flat list of geometry shapes will then be grouped
 based on same presentation attributes to reduce file size.
 
-As many
-transformations applied by GT7OE are destructive, it is highly recommended to
-safe a file always as plain Inkscape SVG before saving as <i>.gt7</i> file so that you
-keep a backup of your work. Output files receive a <i>.gt7</i> extension to avoid the
-risk of accidentally overwriting the original SVG file, although they are fully
-SVG 1.1 compliant and can be loaded into Inkscape without issues (you just need
-to associate the <i>.gt7</i> file extension).
+As many transformations applied by GT7OE are destructive, it is highly recommended to
+safe a file always as plain Inkscape SVG before saving a <i>.gt7</i> copy. Keeping a backup 
+of your work allows you to edit your design as usual, which may be difficult after the conversion. 
+Output files are always suffixed with a <i>.gt7</i> extension to avoid the
+risk of accidentally overwriting your original SVG file, although they are fully
+SVG 1.1 compliant and can be loaded into Inkscape without issues (you only need
+to associate the <i>.gt7</i> file extension). Before uploading files on the Gran Turismo page you need to 
+add the <t>.svg</i> extension to the file, as the upload tool will not display the file otherwise.
 
 <h2>Working With GT7OE -An
 Example</h2>
 
-A good example how to work with GT7OE is adopting the flag of Brazil from Wikipedia: 
+Most designs will be silently converted in a couple of seconds and are ready for upload on the Gran Turismo site. However,
+complex files (complexity is driven by the SVG 2.0 features applied, not the visual look) may require manual postprocessing
+to achieve viable results. A good example how to convert a complex SVG 2.0 with GT7OE is the flag of Brazil from Wikipedia: 
 
 <p>
 <img border=0 width=493 height=302 src="https://upload.wikimedia.org/wikipedia/commons/0/05/Flag_of_Brazil.svg?utm_source=de.wikipedia.org&amp;utm_campaign=index&amp;utm_content=original" </img>
