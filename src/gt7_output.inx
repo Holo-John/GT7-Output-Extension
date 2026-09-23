@@ -1,0 +1,50 @@
+<!-- 
+    GT7 Export Extension for Inkscape - Export SVG 1.1 for the Gran Turismo 7 Livery Editor
+    Copyright (C) 2026  HoloJohn (holojohn@gmx.de)
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ -->
+
+<inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  <name>GT7 Output</name>
+  <id>gt7.output.output</id>
+
+  <output class="GT7Output" saveas="True">
+    <extension>.gt7</extension>
+    <mimetype>image/svg+xml</mimetype>
+    <filetypename>Gran Turismo 7 (*.gt7)</filetypename>
+    <filetypetooltip>SVG export optimized for Gran Turismo 7 Livery Editor</filetypetooltip>
+  </output>
+
+  <param name="strip_alpha" type="boolean" gui-text="Strip alpha from gradients">true</param>
+
+  <param name="rounding_precision" type="int" gui-text="Coordinate rounding (decimal places))">3</param>
+
+  <param name="mesh_divisions" type="int" gui-text="Gradient mesh subdivision count">2</param>
+
+  <param name="compress_output" type="boolean" gui-text="Compress exported GT7 file">false</param>
+
+  <param name="log_level" type="optiongroup" gui-text="Maximum log level for gt7_output.log">
+    <option value="ERROR">Error</option>
+    <option value="WARNING">Warning</option>
+    <option value="INFO">Info</option>
+    <option value="DEBUG">Trace</option>
+    <option value="DISABLED">Off</option>
+    Off
+  </param>
+
+  <script>
+    <command interpreter="python" location="inx">gt7_output.py</command>
+  </script>
+</inkscape-extension>

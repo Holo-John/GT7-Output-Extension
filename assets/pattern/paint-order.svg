@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240">
+
+  <defs>
+    <pattern id="testpattern" patternUnits="userSpaceOnUse" width="20" height="20">
+
+      <!-- background -->
+      <rect width="20" height="20" fill="#ffe680"/>
+
+      <!-- diagonal stripes as CLOSED QUADRILATERALS -->
+      <!-- red -->
+      <path d="M0 20 L20 0 L23 3 L3 23 Z" fill="#ff0000"/>
+
+      <!-- blue -->
+      <path d="M-5 20 L20 -5 L23 -2 L-2 23 Z" fill="#00aaff"/>
+
+      <!-- green -->
+      <path d="M0 25 L25 0 L28 3 L3 28 Z" fill="#00cc44"/>
+
+      <!-- center dot -->
+      <circle cx="10" cy="10" r="4" fill="#000"/>
+    </pattern>
+  </defs>
+
+  <!-- fill ABOVE stroke -->
+  <rect x="20" y="20" width="200" height="200"
+        fill="url(#testpattern)"
+        stroke="black"
+        stroke-width="10"
+        paint-order="stroke fill"/>
+</svg>
+

@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="40mm"
+   height="40mm"
+   viewBox="0 0 40 40"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="Circle A.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="2.5907118"
+     inkscape:cx="62.724075"
+     inkscape:cy="63.496063"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4" />
+  <defs
+     id="defs4">
+    <linearGradient
+       id="linearGradient1"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#00ffff;stop-opacity:1;"
+         offset="0"
+         id="stop5" />
+      <stop
+         style="stop-color:#ff8800;stop-opacity:1;"
+         offset="1"
+         id="stop6" />
+    </linearGradient>
+    <!-- Base gradient in local gear coordinates -->
+    <linearGradient
+       id="gearGradientBase"
+       x1="20"
+       y1="20"
+       x2="40"
+       y2="40"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0"
+         stop-color="#77777d"
+         id="stop1" />
+      <stop
+         offset="1"
+         stop-color="#b7b7b8"
+         id="stop2" />
+    </linearGradient>
+    <!-- Gear gradient clone with a gradientTransform only -->
+    <!-- Borehole gradient in local borehole coordinates -->
+    <linearGradient
+       id="boreholeGradientBase"
+       x1="25"
+       y1="25"
+       x2="35"
+       y2="35"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0"
+         stop-color="#7d7f85"
+         id="stop3" />
+      <stop
+         offset="1"
+         stop-color="#cccbcc"
+         id="stop4" />
+    </linearGradient>
+    <!-- Borehole gradient clone with a different gradientTransform -->
+    <linearGradient
+       gradientUnits="userSpaceOnUse"
+       x1="30"
+       y1="30"
+       x2="50"
+       y2="50"
+       id="L1">
+      <stop
+         offset="0"
+         stop-color="#77777d"
+         id="S1" />
+      <stop
+         offset="1"
+         stop-color="#b7b7b8"
+         id="S2" />
+    </linearGradient>
+    <linearGradient
+       gradientUnits="userSpaceOnUse"
+       x1="35"
+       y1="35"
+       x2="45"
+       y2="45"
+       id="L2">
+      <stop
+         offset="0"
+         stop-color="#7d7f85"
+         id="S3" />
+      <stop
+         offset="1"
+         stop-color="#cccbcc"
+         id="S4" />
+    </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient1"
+       id="linearGradient6"
+       x1="5.3106384"
+       y1="6.7234044"
+       x2="33.872341"
+       y2="34.093616"
+       gradientUnits="userSpaceOnUse" />
+  </defs>
+  <!-- Single shape transform you can treat as T_shape -->
+  <circle
+     id="gear"
+     cx="20"
+     cy="20"
+     r="20"
+     fill="url(#L1)"
+     style="fill:url(#linearGradient6)"
+     inkscape:label="A" />
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .cls-1 { fill: blue; }
+  </style>
+  <rect class="cls-1" x="10" y="10" width="80" height="40" fill="red"/>
+</svg>

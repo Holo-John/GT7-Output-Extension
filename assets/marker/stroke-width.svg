@@ -1,0 +1,49 @@
+<svg width="600" height="200" viewBox="0 0 600 200"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Marker that scales with stroke width -->
+  <marker id="m-strokeWidth"
+          markerUnits="strokeWidth"
+          markerWidth="10" markerHeight="10"
+          refX="0" refY="2"
+          orient="auto">
+    <!-- No explicit stroke-width → should inherit -->
+    <path d="M0,0 L4,2 L0,4 Z"
+          fill="red"
+          stroke="black"/>
+  </marker>
+
+  <!-- Marker that does NOT scale with stroke width -->
+  <marker id="m-userSpace"
+          markerUnits="userSpaceOnUse"
+          markerWidth="10" markerHeight="10"
+          refX="0" refY="2"
+          orient="auto">
+    <!-- No explicit stroke-width → should NOT inherit -->
+    <path d="M0,0 L4,2 L0,4 Z"
+          fill="blue"
+          stroke="black"/>
+  </marker>
+
+  <!-- Path with small stroke width -->
+  <path d="M50 50 L250 50"
+        stroke="black"
+        stroke-width="2"
+        marker-end="url(#m-strokeWidth)"/>
+
+  <path d="M50 100 L250 100"
+        stroke="black"
+        stroke-width="2"
+        marker-end="url(#m-userSpace)"/>
+
+  <!-- Path with large stroke width -->
+  <path d="M350 50 L550 50"
+        stroke="black"
+        stroke-width="12"
+        marker-end="url(#m-strokeWidth)"/>
+
+  <path d="M350 100 L550 100"
+        stroke="black"
+        stroke-width="12"
+        marker-end="url(#m-userSpace)"/>
+</svg>

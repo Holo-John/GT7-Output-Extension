@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="600" viewBox="0 0 800 600"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <!-- Gradients -->
+  <defs>
+    <!-- Fully opaque gradient -->
+    <linearGradient id="grad_opaque">
+      <stop offset="0%" stop-color="black"/>
+      <stop offset="100%" stop-color="white"/>
+    </linearGradient>
+
+    <!-- Fully transparent gradient -->
+    <linearGradient id="grad_transparent">
+      <stop offset="0%" stop-color="black" stop-opacity="0"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Row 1: Fill variations -->
+  <rect x="50" y="50" width="120" height="80" fill="black" stroke="none"/>
+  <text x="50" y="145" font-size="14">1: fill=black (visible)</text>
+
+  <rect x="200" y="50" width="120" height="80" fill="none" stroke="none"/>
+  <text x="200" y="145" font-size="14">2: fill=none, stroke=none (invisible)</text>
+
+  <rect x="350" y="50" width="120" height="80" fill="transparent" stroke="none"/>
+  <text x="350" y="145" font-size="14">3: fill=transparent (invisible)</text>
+
+  <rect x="500" y="50" width="120" height="80" fill="rgba(0,0,0,0.3)" stroke="none"/>
+  <text x="500" y="145" font-size="14">4: fill=rgba(...,0.3) (visible)</text>
+
+  <!-- Row 2: Stroke variations -->
+  <circle cx="110" cy="250" r="40" fill="none" stroke="black" stroke-width="2"/>
+  <text x="50" y="330" font-size="14">5: stroke=black, width=2 (visible)</text>
+
+  <circle cx="260" cy="250" r="40" fill="none" stroke="black" stroke-width="0"/>
+  <text x="200" y="330" font-size="14">6: stroke-width=0 (invisible)</text>
+
+  <circle cx="410" cy="250" r="40" fill="none" stroke="none"/>
+  <text x="350" y="330" font-size="14">7: stroke=none (invisible)</text>
+
+  <circle cx="560" cy="250" r="40" fill="none" stroke="transparent" stroke-width="2"/>
+  <text x="500" y="330" font-size="14">8: stroke=transparent (invisible)</text>
+
+  <!-- Row 3: Gradient tests -->
+  <ellipse cx="110" cy="450" rx="60" ry="40" fill="url(#grad_opaque)" stroke="none"/>
+  <text x="50" y="530" font-size="14">9: opaque gradient (visible)</text>
+
+  <ellipse cx="260" cy="450" rx="60" ry="40" fill="url(#grad_transparent)" stroke="none"/>
+  <text x="200" y="530" font-size="14">10: transparent gradient (invisible)</text>
+
+  <ellipse cx="410" cy="450" rx="60" ry="40" fill="none" stroke="url(#grad_opaque)" stroke-width="2"/>
+  <text x="350" y="530" font-size="14">11: stroke gradient opaque (visible)</text>
+
+  <ellipse cx="560" cy="450" rx="60" ry="40" fill="none" stroke="url(#grad_transparent)" stroke-width="2"/>
+  <text x="500" y="530" font-size="14">12: stroke gradient transparent (invisible)</text>
+
+</svg>

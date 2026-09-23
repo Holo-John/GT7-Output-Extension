@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="300"
+   height="180"
+   viewBox="0 0 300 180"
+   version="1.1"
+   id="svg2"
+   sodipodi:docname="pattern-on-group.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview2"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.6319444"
+     inkscape:cx="155.33617"
+     inkscape:cy="-2.1446809"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg2" />
+  <defs
+     id="defs2">
+    <pattern
+       inkscape:collect="always"
+       preserveAspectRatio="xMidYMid"
+       patternTransform="scale(0.2)"
+       patternUnits="userSpaceOnUse"
+       width="100"
+       height="100"
+       id="Tiles"
+       style="fill:#a8cbfe">
+      <g id="g9422">
+        <rect
+		   style="fill-opacity:1;stroke:none"
+		   width="100"
+		   height="100"
+		   x="0"
+		   y="0"
+		   id="rect2996"
+		   fill="blue"   />
+
+        <path
+		   id="rect7383"
+		   style="fill:#ffffff;fill-opacity:0.42487;stroke-width:0"
+		   d="M 60,40 50,50 V 0 H 60 Z M 50,50 v 10 40 H 60 V 60 h 40 V 50 H 60 Z m 0,0 -10,10 H 0 V 50 Z" />
+
+        <path
+		   id="rect7385"
+		   style="fill:#000000;fill-opacity:0.300518;stroke-width:0"
+		   d="M 40,60 50,50 v 50 H 40 Z M 100,40 V 50 H 50 L 60,40 Z M 40,0 V 40 H 0 V 50 H 40 50 V 40 0 Z" />
+
+      </g>
+
+    </pattern>
+    
+  </defs>
+  <!-- OUTER GROUP: pattern applied here -->
+  <g
+     id="outer"
+     fill="url(#grad1)"
+     transform="translate(20,20)"
+     style="fill:url(#Tiles);fill-opacity:1">
+    <!-- Shape directly inside outer group -->
+    <rect
+       x="0"
+       y="0"
+       width="120"
+       height="60"
+       id="rect2"
+	   stroke="green"
+	   stroke.width="2"/>
+    <!-- NESTED GROUP: inherits gradient from outer group -->
+    <g
+       id="inner"
+       transform="translate(150,0) scale(0.8)"
+       style="fill:url(#Tiles);fill-opacity:1">
+      <!-- Shape inside nested group -->
+      <circle
+         cx="40"
+         cy="30"
+         r="30"
+         id="circle2"
+		 stroke="green"
+	     stroke.width="2" />
+      <!-- Another nested group inside the nested group -->
+      <g
+         id="inner-inner"
+         transform="translate(0,80) rotate(10)" >
+        <polygon
+           points="0,0 80,0 40,40"
+           id="polygon2"
+           stroke="green"
+	       stroke.width="2"		   />
+      </g>
+    </g>
+  </g>
+</svg>

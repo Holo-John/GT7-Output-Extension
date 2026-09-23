@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200">
+  <!-- Two distinct open subpaths combined into one stroked path -->
+  <path d="
+      M 20 180 L 180 20
+      M 20 160 L 180 0
+    "
+    stroke="red"
+    stroke-width="10"
+    fill="none"
+  />
+</svg>

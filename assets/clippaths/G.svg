@@ -1,0 +1,36 @@
+<svg width="1000" height="700" viewBox="-2100 -1470 4200 2940"
+     xmlns="http://www.w3.org/2000/svg"
+     xmlns:xlink="http://www.w3.org/1999/xlink">
+
+  <defs>
+
+    <!-- The O glyph (compound path with inner ring) -->
+    <path id="O"
+          d="m0 0
+             a31.5 35 0 0 0 0 -70
+             a31.5 35 0 0 0 0 70
+             m0 -13
+             a18.5 22 0 0 0 0 -44
+             a18.5 22 0 0 0 0 44"
+          fill-rule="evenodd"/>
+
+    <!-- The G clip window -->
+    <clipPath id="g">
+      <path d="m-31.5 0v-70h63v70zm31.5-47v12h31.5v-12z"/>
+    </clipPath>
+
+    <!-- The G glyph: O clipped by g, plus two bars -->
+    <g id="G">
+      <use xlink:href="#O" clip-path="url(#g)"/>
+      <path d="M5 -35 H31.5 V-25 H5z"/>
+      <path d="m21.5 -35 h10 v35 h-10z"/>
+    </g>
+
+  </defs>
+
+  <!-- The G placed at its real position -->
+  <g transform="translate(-420,1470)" fill="#009440">
+    <use transform="rotate(23.5)" y="-1697.5" xlink:href="#G"/>
+  </g>
+
+</svg>

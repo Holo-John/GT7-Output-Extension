@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="40mm"
+   height="40mm"
+   viewBox="0 0 40 40"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="Tiled Clones A.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="2.5907118"
+     inkscape:cx="76.233875"
+     inkscape:cy="-9.0708662"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4" />
+  <defs
+     id="defs4">
+    <linearGradient
+       id="linearGradient1"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#00ffff;stop-opacity:1;"
+         offset="0"
+         id="stop5" />
+      <stop
+         style="stop-color:#ff8800;stop-opacity:1;"
+         offset="1"
+         id="stop6" />
+    </linearGradient>
+    <!-- Base gradient in local gear coordinates -->
+    <linearGradient
+       id="gearGradientBase"
+       x1="20"
+       y1="20"
+       x2="40"
+       y2="40"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0"
+         stop-color="#77777d"
+         id="stop1" />
+      <stop
+         offset="1"
+         stop-color="#b7b7b8"
+         id="stop2" />
+    </linearGradient>
+    <!-- Gear gradient clone with a gradientTransform only -->
+    <!-- Borehole gradient in local borehole coordinates -->
+    <linearGradient
+       id="boreholeGradientBase"
+       x1="25"
+       y1="25"
+       x2="35"
+       y2="35"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0"
+         stop-color="#7d7f85"
+         id="stop3" />
+      <stop
+         offset="1"
+         stop-color="#cccbcc"
+         id="stop4" />
+    </linearGradient>
+    <!-- Borehole gradient clone with a different gradientTransform -->
+    <linearGradient
+       gradientUnits="userSpaceOnUse"
+       x1="30"
+       y1="30"
+       x2="50"
+       y2="50"
+       id="L1">
+      <stop
+         offset="0"
+         stop-color="#77777d"
+         id="S1" />
+      <stop
+         offset="1"
+         stop-color="#b7b7b8"
+         id="S2" />
+    </linearGradient>
+    <linearGradient
+       gradientUnits="userSpaceOnUse"
+       x1="35"
+       y1="35"
+       x2="45"
+       y2="45"
+       id="L2">
+      <stop
+         offset="0"
+         stop-color="#7d7f85"
+         id="S3" />
+      <stop
+         offset="1"
+         stop-color="#cccbcc"
+         id="S4" />
+    </linearGradient>
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient1"
+       id="linearGradient6"
+       x1="5.3106384"
+       y1="6.7234044"
+       x2="33.872341"
+       y2="34.093616"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="matrix(0.04255319,0,0,0.04255319,17.668085,3.6765968)" />
+  </defs>
+  <!-- Single shape transform you can treat as T_shape -->
+  <circle
+     id="gear"
+     cx="18.519148"
+     cy="4.5276608"
+     r="0.85106373"
+     fill="url(#L1)"
+     style="fill:url(#linearGradient6);stroke-width:0.0425532"
+     inkscape:label="A"
+     inkscape:transform-center-x="-0.29459854"
+     inkscape:transform-center-y="-12.520458"
+     inkscape:tile-cx="18.224549"
+     inkscape:tile-cy="17.048118"
+     inkscape:tile-w="1.7021274"
+     inkscape:tile-h="1.7021274"
+     inkscape:tile-x0="17.668084"
+     inkscape:tile-y0="3.676597" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use24"
+     inkscape:transform-center-x="-13.697236"
+     inkscape:transform-center-y="0.017012861" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(15,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use25"
+     inkscape:transform-center-x="-16.927731"
+     inkscape:transform-center-y="0.51988489" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(30,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use26"
+     inkscape:transform-center-x="-19.917996"
+     inkscape:transform-center-y="1.8417355" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(45,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use27"
+     inkscape:transform-center-x="-22.46425"
+     inkscape:transform-center-y="3.8924827" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(60,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use28"
+     inkscape:transform-center-x="-24.392971"
+     inkscape:transform-center-y="6.5323715" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(75,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use29"
+     inkscape:transform-center-x="-25.572718"
+     inkscape:transform-center-y="9.5814979" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(90,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use30"
+     inkscape:transform-center-x="-25.923094"
+     inkscape:transform-center-y="12.832069" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(105,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use31"
+     inkscape:transform-center-x="-25.420222"
+     inkscape:transform-center-y="16.062563" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(120,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use32"
+     inkscape:transform-center-x="-24.098372"
+     inkscape:transform-center-y="19.052829" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(135,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use33"
+     inkscape:transform-center-x="-22.047624"
+     inkscape:transform-center-y="21.599083" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(150,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use34"
+     inkscape:transform-center-x="-19.407736"
+     inkscape:transform-center-y="23.527803" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(165,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use35"
+     inkscape:transform-center-x="-16.358609"
+     inkscape:transform-center-y="24.707551" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(180,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use36"
+     inkscape:transform-center-x="-13.108038"
+     inkscape:transform-center-y="25.057927" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-165,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use37"
+     inkscape:transform-center-x="-9.8775437"
+     inkscape:transform-center-y="24.555055" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-150,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use38"
+     inkscape:transform-center-x="-6.8872784"
+     inkscape:transform-center-y="23.233205" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-135,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use39"
+     inkscape:transform-center-x="-4.3410241"
+     inkscape:transform-center-y="21.182457" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-120,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use40"
+     inkscape:transform-center-x="-2.4123037"
+     inkscape:transform-center-y="18.542568" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-105,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use41"
+     inkscape:transform-center-x="-1.2325564"
+     inkscape:transform-center-y="15.493442" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-90,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use42"
+     inkscape:transform-center-x="-0.88217997"
+     inkscape:transform-center-y="12.242871" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-75,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use43"
+     inkscape:transform-center-x="-1.385052"
+     inkscape:transform-center-y="9.0123766" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-60,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use44"
+     inkscape:transform-center-x="-2.7069026"
+     inkscape:transform-center-y="6.0221113" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-45,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use45"
+     inkscape:transform-center-x="-4.7576498"
+     inkscape:transform-center-y="3.475857" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-30,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use46"
+     inkscape:transform-center-x="-7.3975387"
+     inkscape:transform-center-y="1.5471366" />
+  <use
+     x="0"
+     y="0"
+     inkscape:tiled-clone-of="#gear"
+     xlink:href="#gear"
+     transform="rotate(-15,18.224549,17.048118)"
+     fill="#1c263e"
+     stroke="#1c263e"
+     id="use47"
+     inkscape:transform-center-x="-10.446665"
+     inkscape:transform-center-y="0.36738929" />
+</svg>

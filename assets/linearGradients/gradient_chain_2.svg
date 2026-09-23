@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="40"
+   height="40"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="gradient_chain_2.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="7.34375"
+     inkscape:cx="-17.770213"
+     inkscape:cy="9.0553191"
+     inkscape:window-width="1127"
+     inkscape:window-height="1211"
+     inkscape:window-x="134"
+     inkscape:window-y="65"
+     inkscape:window-maximized="0"
+     inkscape:current-layer="svg4" />
+  <defs
+     id="defs4">
+    <linearGradient
+       id="G0"
+       x1="0"
+       y1="0"
+       x2="10"
+       y2="10"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="translate(-5,-5)">
+      <stop
+         offset="0"
+         stop-color="#ff00ff"
+         id="stop1" />
+      <stop
+         offset="1"
+         stop-color="#00edff"
+         id="stop2" />
+    </linearGradient>
+    <linearGradient
+       id="G1"
+       gradientUnits="userSpaceOnUse"
+       gradientTransform="matrix(0.3,-1.7,1.7,0.3,0,0)"
+       xlink:href="#G0"
+       x2="-9.5284882"
+       y2="13.466228"
+       x1="0.54833645"
+       y1="5.8306441">
+      <stop
+         offset="0"
+         stop-color="#ff00ff"
+         id="stop3" />
+      <stop
+         offset="1"
+         stop-color="#00edff"
+         id="stop4" />
+    </linearGradient>
+  </defs>
+  <g
+     transform="translate(20,20)"
+     id="g4">
+    <path
+       id="path1"
+       d="M0,0 L20,0 L20,20 Z"
+       fill="url(#G1)"
+       style="fill:url(#G1)" />
+  </g>
+</svg>

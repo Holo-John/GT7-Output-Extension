@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="600"
+   height="300"
+   viewBox="0 0 600 300"
+   version="1.1"
+   id="svg2"
+   sodipodi:docname="shapes.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview2"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="3.9166667"
+     inkscape:cx="300.12766"
+     inkscape:cy="150"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg2" />
+  <defs
+     id="defs1">
+    <!-- START marker: red square -->
+    <marker
+       id="m-start"
+       markerWidth="8"
+       markerHeight="8"
+       refX="4"
+       refY="4"
+       orient="auto"
+       markerUnits="strokeWidth">
+      <rect
+         x="0"
+         y="0"
+         width="8"
+         height="8"
+         fill="red"
+         id="rect1" />
+    </marker>
+    <!-- MID marker: green triangle -->
+    <marker
+       id="m-mid"
+       markerWidth="8"
+       markerHeight="8"
+       refX="0"
+       refY="4"
+       orient="auto"
+       markerUnits="strokeWidth">
+      <path
+         d="M0,0 8,4 0,8 Z"
+         fill="green"
+         id="path1" />
+    </marker>
+    <!-- END marker: blue circle -->
+    <marker
+       id="m-end"
+       markerWidth="8"
+       markerHeight="8"
+       refX="4"
+       refY="4"
+       orient="auto"
+       markerUnits="strokeWidth">
+      <circle
+         cx="4"
+         cy="4"
+         r="4"
+         fill="blue"
+         id="circle1" />
+    </marker>
+  </defs>
+  <!-- Circle -->
+  <circle
+     cx="100"
+     cy="100"
+     r="60"
+     fill="none"
+     stroke="black"
+     stroke-width="5"
+     marker-start="url(#m-start)"
+     marker-mid="url(#m-mid)"
+     marker-end="url(#m-end)"
+     id="circle2" />
+  <!-- Ellipse -->
+  <ellipse
+     cx="300"
+     cy="100"
+     rx="80"
+     ry="40"
+     fill="none"
+     stroke="black"
+     stroke-width="5"
+     marker-start="url(#m-start)"
+     marker-mid="url(#m-mid)"
+     marker-end="url(#m-end)"
+     id="ellipse2" />
+  <!-- Rectangle -->
+  <rect
+     x="420"
+     y="40"
+     width="120"
+     height="120"
+     fill="none"
+     stroke="black"
+     stroke-width="5"
+     marker-start="url(#m-start)"
+     marker-mid="url(#m-mid)"
+     marker-end="url(#m-end)"
+     id="rect2" />
+</svg>

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="300" viewBox="0 0 800 300">
+
+  <!-- defs: clipPath defined once -->
+  <defs>
+    <!-- clipPath id used by Case A -->
+    <clipPath id="clipA">
+      <!-- a rectangular wedge that will clip the circle -->
+      <path d="M 50 0 L 150 0 L 150 100 L 50 100 Z" />
+    </clipPath>
+
+    <!-- clipPath id used by Case B (inside defs for clarity) -->
+    <clipPath id="clipB">
+      <path d="M 0 0 L 100 0 L 100 100 L 0 100 Z" />
+    </clipPath>
+  </defs>
+
+  <!-- CASE A: clipPath in defs, shape inside a rotated group -->
+  <!-- Expected: blue circle clipped by the wedge (visible) -->
+  <g transform="translate(150,150) rotate(30)">
+    <!-- circle references clipA defined in defs -->
+    <circle r="60" fill="#1e90ff" clip-path="url(#clipA)" />
+    <!-- outline for debugging -->
+    <path d="M50 0 L150 0 L150 100 L50 100 Z" fill="none" stroke="#000" stroke-dasharray="4"/>
+  </g>
+
+  <!-- CASE B: clipPath placed inside a transformed group -->
+  <!-- This demonstrates that clipPath location in DOM does not make it implicitly apply to the group -->
+  <g transform="translate(450,150) rotate(-20)">
+    <!-- clipPath is defined as a child of this group (for the test we reference it by id) -->
+    <defs>
+      <clipPath id="localClip">
+        <!-- local clip shape in local coords -->
+        <path d="M 20 0 L 120 0 L 120 80 L 20 80 Z" />
+      </clipPath>
+    </defs>
+
+    <!-- circle references the local clip by id -->
+    <circle r="60" fill="#1e90ff" clip-path="url(#localClip)" />
+    <!-- outline for debugging -->
+    <path d="M20 0 L120 0 L120 80 L20 80 Z" fill="none" stroke="#000" stroke-dasharray="4"/>
+  </g>
+
+  <!-- Labels -->
+  <text x="120" y="20" font-size="14" fill="#000">Case A: clipPath in defs, group rotated</text>
+  <text x="420" y="20" font-size="14" fill="#000">Case B: clipPath defined inside group</text>
+
+</svg>

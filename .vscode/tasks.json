@@ -1,0 +1,78 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "GT7: Setup  venv",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "build.py",
+                "setup"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "GT7: Release",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "build.py",
+                "release",
+                "--verbose"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "GT7: Deploy",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "build.py",
+                "deploy",
+                "--verbose"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "GT7: API Docs",
+            "type": "shell",
+            "command": "${command:python.interpreterPath} -m pdoc -t ${workspaceFolder}/docs/templates --output-dir ${workspaceFolder}/docs/build ${workspaceFolder}/src/gt7_output.py",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

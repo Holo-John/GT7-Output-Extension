@@ -1,0 +1,11 @@
+[run]
+source = src
+data_file = test_output/.coverage
+
+[report]
+omit =
+    test/*
+    test_output/*
+
+[html]
+directory = test_output/coverage

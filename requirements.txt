@@ -1,0 +1,10 @@
+py>=1.11.0
+pytest>=9.0.0
+pytest-cov>=6.0
+pytest-html>=4.2.0
+python-dotenv>=1.0.0
+inkex>=1.0
+matplotlib>=3.8
+scikit-image>=0.24
+vulture>=2.13
+pdoc>=16.0.0

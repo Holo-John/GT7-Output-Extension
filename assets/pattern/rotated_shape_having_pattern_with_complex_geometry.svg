@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="220.19302"
+   height="220.19302"
+   viewBox="0 0 220.19302 220.19302"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="rotated_shape_having_pattern_with_complex_geometry.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="2.9375"
+     inkscape:cx="43.744681"
+     inkscape:cy="51.914894"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4" />
+  <defs
+     id="defs3">
+    <pattern
+       inkscape:collect="always"
+       xlink:href="#complexPattern"
+       id="pattern4"
+       patternTransform="rotate(10,842.06259,212.22298)" />
+    <!-- Pattern with groups and transforms -->
+    <pattern
+       id="complexPattern"
+       x="0"
+       y="0"
+       width="40"
+       height="40"
+       patternUnits="userSpaceOnUse"
+       patternTransform="rotate(10)">
+      <!-- Grouped, transformed background -->
+      <g
+         id="bgGroup"
+         fill="#f0f0f0"
+         transform="translate(2,2)">
+        <rect
+           x="0"
+           y="0"
+           width="36"
+           height="36"
+           id="rect1" />
+      </g>
+      <!-- Grouped foreground cross with its own transform -->
+      <g
+         id="crossGroup"
+         fill="#ff0000"
+         transform="translate(20,20) rotate(45)">
+        <rect
+           x="-2"
+           y="-12"
+           width="4"
+           height="24"
+           id="rect2" />
+        <rect
+           x="-12"
+           y="-2"
+           width="24"
+           height="4"
+           id="rect3" />
+      </g>
+      <!-- Individual shape with local transform -->
+      <rect
+         id="cornerSquare"
+         x="0"
+         y="0"
+         width="8"
+         height="8"
+         fill="#0000ff"
+         transform="translate(30,30) scale(0.75)" />
+    </pattern>
+  </defs>
+  <!-- Target geometry using the pattern -->
+  <rect
+     x="69.644951"
+     y="-122.99849"
+     width="160"
+     height="160"
+     fill="url(#complexPattern)"
+     stroke="#000000"
+     stroke-width="2"
+     id="rect4"
+     style="fill:url(#pattern4)"
+     transform="rotate(61.031302)" />
+</svg>

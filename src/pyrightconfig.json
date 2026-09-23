@@ -1,0 +1,14 @@
+{
+    "include": ["."],
+    "extraPaths": ["..", "../src", "../test"],
+    "venvPath": "..",
+    "venv": ".venv",
+    "pythonVersion": "3.12",
+    "typeCheckingMode": "strict",
+    "reportMissingImports": true,
+    "reportUnusedVariable": "warning",
+    "reportUnknownParameterType": "error",
+    "reportUnknownArgumentType": "error",
+    "reportUnknownMemberType": "error",
+    "reportGeneralTypeIssues": "error"
+}

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="27.781265mm"
+   height="27.781265mm"
+   viewBox="0 0 27.781265 27.781265"
+   version="1.1"
+   id="svg1"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   sodipodi:docname="paint-order-2.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:document-units="mm"
+     inkscape:zoom="1.4803312"
+     inkscape:cx="48.975526"
+     inkscape:cy="186.78252"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="layer1" />
+  <defs
+     id="defs1">
+    <marker
+       id="m-start"
+       markerWidth="5"
+       markerHeight="5"
+       refX="2.5"
+       refY="2.5"
+       orient="auto">
+      <rect
+         x="0"
+         y="0"
+         width="5"
+         height="5"
+         fill="#ff0000"
+         id="rect1" />
+    </marker>
+    <marker
+       id="m-mid"
+       markerWidth="5"
+       markerHeight="5"
+       refX="0"
+       refY="2.5"
+       orient="auto">
+      <path
+         d="M 0,0 5,2.5 0,5 Z"
+         fill="#008000"
+         id="path1" />
+    </marker>
+    <marker
+       id="m-end"
+       markerWidth="5"
+       markerHeight="5"
+       refX="2.5"
+       refY="2.5"
+       orient="auto">
+      <circle
+         cx="2.5"
+         cy="2.5"
+         r="2.5"
+         fill="#0000ff"
+         id="circle1" />
+    </marker>
+  </defs>
+  <g
+     inkscape:label="Layer 1"
+     inkscape:groupmode="layer"
+     id="layer1"
+     transform="translate(-76.729156,-88.635406)">
+    <circle
+       cx="90.619789"
+       cy="102.52604"
+       r="10.583333"
+       fill="#cccccc"
+       stroke="#cccccc"
+       stroke-width="1.32292"
+       marker-start="url(#m-start)"
+       marker-mid="url(#m-mid)"
+       marker-end="url(#m-end)"
+       paint-order="markers stroke fill"
+       id="circle5" />
+  </g>
+</svg>

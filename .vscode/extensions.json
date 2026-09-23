@@ -1,0 +1,10 @@
+{
+    "recommendations": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "redhat.vscode-xml",
+        "eamodio.gitlens",
+        "aaron-bond.better-comments"
+    ]
+}
