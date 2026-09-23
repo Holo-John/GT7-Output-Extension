@@ -20,7 +20,7 @@ If you want to clone this repository, follow these steps to setup your devenv:
    - Enter Tasks: Run Task (follow autocompletion)
    - Enter GT7: Setup .venv (follow autocompletion)
 
-   This will create a .venv folder with a python environment needed for running tests and Visual Studio Code tasks. The python modules listed in requirements.txt will be pip installed automatically into the environment.
+   This will create a .venv folder with a python environment needed for running tests and Visual Studio Code tasks. The python modules listed in requirements.txt will automatically be "pip-installed" into the environment.
 
 6. Other pre-tasks defined in the workspace are:
    - GT7: Deploy -> Deploys the GT7 Output Extensions into the local Inkscape installation.
