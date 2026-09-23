@@ -1,7 +1,7 @@
 # GT7-Output-Extension
 Inkscape output extension that converts SVG 2.0 content to SVG 1.1 considering additional constraints of the Gran Turismo 7 Livery Editor.
 
-If you want to modify the code, follow these steps to setup your devenv:
+If you want to clone this repository, follow these steps to setup your devenv:
 
 1. Install Prerequisites
    - Inkscape version >= 1.4.2
