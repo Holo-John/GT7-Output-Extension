@@ -8,11 +8,11 @@ GT7OE is platform-independent and requires Inkscape 1.4 or later.
 
 Installation consists of only a few steps:
 
-1. Download the latest `gt7_ouput_extension.zip` release from the **Releases** tab.
-1. Extract the contents of the ZIP archive.
-2. Open Inkscape and navigate to **Preferences**.
-3. Click the **Open** button next to **User Extensions**. This will open the user extensions directory in your operating system's file manager.
-4. Copy `gt7_output.inx` and `gt7_output.py` into the user extensions directory.
+1. [Download the Latest Release](https://github.com)
+2. Extract the contents of the ZIP archive.
+3. Open Inkscape and navigate to **Preferences**.
+4. Click the **Open** button next to **User Extensions**. This will open the user extensions directory in your operating system's file manager.
+5. Copy `gt7_output.inx` and `gt7_output.py` into the user extensions directory.
 
 Further usage instructions, feature documentation, and practical examples are included in the user manual contained in the release ZIP archive.
 
