@@ -7773,7 +7773,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         already colorized with a GT7-safe fallback gradient.
         """
 
-        n_div = self.options.mesh_divisions
+        n_div = max(2, self.options.mesh_divisions)
         self.log(logging.DEBUG, f"Mesh divisions={n_div}")
 
         # --- Step 0: resolve chained attributes (still useful for later coloring) ---

@@ -31,7 +31,7 @@
 
   <param name="rounding_precision" type="int" gui-text="Coordinate rounding (decimal places))">3</param>
 
-  <param name="mesh_divisions" type="int" gui-text="Gradient mesh subdivision count">2</param>
+  <param name="mesh_divisions" type="int" gui-text="Gradient mesh subdivision count" min="2">2</param>
 
   <param name="compress_output" type="boolean" gui-text="Compress exported GT7 file">false</param>
 
