@@ -1,28 +1,45 @@
-# GT7-Output-Extension
-Inkscape output extension that converts SVG 2.0 content to SVG 1.1 considering additional constraints of the Gran Turismo 7 Livery Editor.
+# GT7 Output Extension - GT7OE
 
-If you want to clone this repository, follow these steps to setup your devenv:
+Inkscape output extension that converts SVG 2.0 artwork into SVG 1.1 files compatible with the Gran Turismo 7 Livery Editor.
 
-1. Install Prerequisites
-   - Inkscape version >= 1.4.2
-   - Python
-   - Git
-   - Visual Studio Code
+## Quick User Guide
 
-2. Checkout the repository to a local folder
+GT7OE is platform-independent and requires Inkscape 1.4 or later.
 
-3. Go to your local folder, and copy ".env.example" to ".env". Follow the instructions inside the file to enter necessary paths.
+Installation consists of only a few steps:
 
-4. Open your local folder in Visual Studio Code
+1. Extract the contents of the `gt7_output_extension.zip` archive.
+2. Open Inkscape and navigate to **Preferences**.
+3. Click the **Open** button next to **User Extensions**. This will open the user extensions directory in your operating system's file manager.
+4. Copy `gt7_output.inx` and `gt7_output.py` into the user extensions directory.
 
-5. Setup the .venv environment required for testing:
-   - In Visual Studio Code, press <CTRL>+<SHIFT>+<P>
-   - Enter Tasks: Run Task (follow autocompletion)
-   - Enter GT7: Setup .venv (follow autocompletion)
+Further usage instructions, feature documentation, and practical examples are included in the user manual contained in the release ZIP archive.
 
-   This will create a .venv folder with a python environment needed for running tests and Visual Studio Code tasks. The python modules listed in requirements.txt will automatically be "pip-installed" into the environment.
+## Quick Development Guide
 
-6. Other pre-tasks defined in the workspace are:
-   - GT7: Deploy -> Deploys the GT7 Output Extensions into the local Inkscape installation.
-   - GT7: Release -> Build a ZIP archive in the dist folder containing the deployable files, license, and user manual.
-   - GT7: API Docs -> Generates API documentation into the folder docs/build
+If you want to contribute to GT7OE or build it from source, follow these steps to set up a local development environment:
+
+### Prerequisites
+
+- Inkscape 1.4.2 or later
+- Python
+- Git
+- Visual Studio Code
+
+### Setup
+
+1. Clone the repository.
+2. Copy `.env.example` to `.env` and follow the instructions inside the file to configure the required paths.
+3. Open the repository in Visual Studio Code.
+4. Create the development environment:
+   - Press `CTRL+SHIFT+P`
+   - Select **Tasks: Run Task**
+   - Select **GT7: Setup .venv**
+
+This creates a `.venv` folder containing the Python environment required for testing and Visual Studio Code tasks. All modules listed in `requirements.txt` are automatically installed.
+
+### Other Available Tasks
+
+- **GT7: Deploy** → Deploys the extension into the local Inkscape installation.
+- **GT7: Release** → Builds a ZIP archive in the `dist` folder containing the extension, license, and user manual.
+- **GT7: API Docs** → Generates API documentation in `docs/build`.
