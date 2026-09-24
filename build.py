@@ -12,8 +12,8 @@ ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"
 DIST_DIR = ROOT / "dist"
 FILES_TO_INSTALL = ("gt7_output.py", "gt7_output.inx")
-FILES_TO_BUNDLE = FILES_TO_INSTALL + ("license.txt", "manual")
-BUNDLE_FILE = "gt7_exporter_bundle.zip"
+FILES_TO_BUNDLE = FILES_TO_INSTALL + ("LICENSE", "manual")
+BUNDLE_FILE = "gt7_output_extension.zip"
 
 
 def _load_environment() -> None:
