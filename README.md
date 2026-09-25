@@ -26,6 +26,7 @@ If you want to contribute to GT7OE or build it from source, follow these steps t
 - Python
 - Git
 - Visual Studio Code
+- GnuPG (only for official releases)
 
 ### Setup
 
@@ -42,5 +43,6 @@ This creates a `.venv` folder containing the Python environment required for tes
 ### Other Available Tasks
 
 - **GT7: Deploy** → Deploys the extension into the local Inkscape installation.
-- **GT7: Release** → Builds a ZIP archive in the `dist` folder containing the extension, license, and user manual.
+- **GT7: Package** → Builds an unsigned ZIP archive in the `dist/build` folder containing the extension, license, and user manual.
+- **GT7: Release** → Builds a signed ZIP archive and signature file in the `dist/build` folder containing the extension, license, and user manual.
 - **GT7: API Docs** → Generates API documentation in `docs/build`.

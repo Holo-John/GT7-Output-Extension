@@ -28,11 +28,13 @@ def temp_workspace(tmp_path):
 
 def test_build_release_bundle_creates_zip(temp_workspace):
     workspace, _, dist_dir = temp_workspace
-    archive_path = build.build_release_bundle(workspace, dist_dir)
+    (archive_path, signature_path) = build.package(workspace, dist_dir)
+
+    assert signature_path.exists()
 
     assert archive_path.exists()
     assert archive_path.suffix == ".zip"
-    assert archive_path.name.startswith("gt7_exporter")
+    assert archive_path.name.startswith("gt7_output_extension")
 
     extracted = archive_path.parent / "bundle_extract"
     shutil.unpack_archive(archive_path, extracted)
@@ -45,9 +47,10 @@ def test_build_release_bundle_creates_zip(temp_workspace):
 def test_build_release_bundle_accepts_verbose_flag(temp_workspace):
     workspace, _, dist_dir = temp_workspace
 
-    archive_path = build.build_release_bundle(workspace, dist_dir, verbose=True)
+    (archive_path, signature_path) = build.package(workspace, dist_dir, verbose=True)
 
     assert archive_path.exists()
+    assert signature_path.exists()
 
 
 def test_deploy_extension_files_copies_to_target_dir(temp_workspace):
@@ -117,7 +120,7 @@ def test_setup_environment_creates_venv_and_installs_requirements(tmp_path):
     requirements_file = tmp_path / "requirements.txt"
     requirements_file.write_text("pytest>=9.0.0\n", encoding="utf-8")
 
-    python_path = build.setup_environment(
+    python_path = build.setup(
         workspace_dir=tmp_path,
         venv_dir=tmp_path / ".venv",
         requirements_file=requirements_file,
@@ -138,11 +141,11 @@ def test_setup_environment_recreates_existing_venv(tmp_path):
     requirements_file.write_text("pytest>=9.0.0\n", encoding="utf-8")
     venv_dir = tmp_path / ".venv"
 
-    build.setup_environment(workspace_dir=tmp_path, venv_dir=venv_dir, requirements_file=requirements_file)
+    build.setup(workspace_dir=tmp_path, venv_dir=venv_dir, requirements_file=requirements_file)
     marker = venv_dir / "marker.txt"
     marker.write_text("stale\n", encoding="utf-8")
 
-    build.setup_environment(workspace_dir=tmp_path, venv_dir=venv_dir, requirements_file=requirements_file, recreate=True)
+    build.setup(workspace_dir=tmp_path, venv_dir=venv_dir, requirements_file=requirements_file, recreate=True)
 
     assert not marker.exists()
     python_path = venv_dir / ("Scripts/python.exe" if __import__("os").name == "nt" else "bin/python")

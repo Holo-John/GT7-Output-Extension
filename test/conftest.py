@@ -31,7 +31,7 @@ if test_dir not in sys.path:
     sys.path.insert(0, test_dir)
 
 @pytest.fixture(scope="session", autouse=True)
-def clean_test_output():
+def _clean_dist():
     root = pathlib.Path(TEST_OUTPUT_ROOT)
     root.mkdir(parents=True, exist_ok=True)
 

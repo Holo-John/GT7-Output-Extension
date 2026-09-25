@@ -10,19 +10,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 SRC_DIR = ROOT / "src"
-DIST_DIR = ROOT / "dist"
+DIST_DIR = ROOT / "dist/build"
 FILES_TO_INSTALL = ("gt7_output.py", "gt7_output.inx")
 FILES_TO_BUNDLE = FILES_TO_INSTALL + ("LICENSE", "manual")
 
-def get_version() -> str:
-    try:
-        return (
-            subprocess.check_output(["git", "describe", "--tags", "--exact-match"],text=True,)
-                .strip()
-                .removeprefix("v")
-        )
-    except Exception:
-        return "dev"
+from pathlib import Path
+import subprocess
 
 def _load_environment() -> None:
     env_path = ROOT / ".env"
@@ -43,11 +36,62 @@ def _load_environment() -> None:
         os.environ.setdefault(key, value)
 
 
+def _clean_dist(
+    output_dir: str | Path = DIST_DIR,
+    verbose: bool = False,
+) -> None:
+    output_dir = Path(output_dir)
+
+    if not output_dir.exists():
+        return
+
+    patterns = (
+        "*.zip",
+        "*.sig",
+    )
+
+    for pattern in patterns:
+        for artifact in output_dir.glob(pattern):
+            artifact.unlink()
+
+            if verbose:
+                print(f"  delete: {artifact.name}")
+
+
+def _get_version(release:bool=False) -> str:
+    
+    try:
+        git_exe = os.environ.get("GIT_EXE", "git")
+        
+        version = "def"
+
+        if release:
+            version = subprocess.check_output(
+                [git_exe, "describe", "--tags"],
+                text=True,
+                cwd=ROOT,
+            ).strip()
+
+            # v1.0.1-7-g588beab -> v1.0.1
+            version = version.split("-", 1)[0]
+
+            # v1.0.1 -> 1.0.1
+            version = version.removeprefix("v")
+
+    except Exception as ex:
+        print(f"Unable to determine version: {ex}")
+        version = "dev"
+
+    finally:
+        return version
+    
+
 def _bundle_files(
     workspace_dir: str | Path = ROOT,
     source_dir: str | Path | None = None,
     output_dir: str | Path = DIST_DIR,
     verbose: bool = False,
+    release:bool=False
 ) -> Path:
     workspace_dir = Path(workspace_dir)
     if source_dir is None:
@@ -56,7 +100,7 @@ def _bundle_files(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    version = get_version()
+    version = _get_version(release)
     bundle_file = f"gt7_output_extension-{version}.zip"
 
     archive_path = output_dir / bundle_file
@@ -82,6 +126,38 @@ def _bundle_files(
     if verbose:
         print(f"Created bundle: {archive_path}")
     return archive_path
+
+def _sign_release(zip_file: str | Path, verbose: bool = False) -> Path:
+    zip_file = Path(zip_file)
+
+    if not zip_file.exists():
+        raise FileNotFoundError(zip_file)
+
+    gpg_exe = Path(os.environ["GPG_EXE"])
+
+    if not gpg_exe.exists():
+        raise FileNotFoundError(
+            f"GPG executable not found: {gpg_exe}"
+        )
+
+    sig_file = zip_file.with_suffix(".sig")
+
+    subprocess.run(
+        [
+            str(gpg_exe),
+            "--output",
+            str(sig_file),
+            "--detach-sign",
+            str(zip_file),
+        ],
+        check=True,
+    )
+
+    if verbose:
+        print(f"Using GPG: {gpg_exe}")
+        print(f"Created signature: {sig_file}")
+
+    return sig_file
 
 
 def deploy(
@@ -127,15 +203,24 @@ def deploy(
     return target_dir
 
 
-def build_release_bundle(
+def package(
     workspace_dir: str | Path = ROOT,
     output_dir: str | Path = DIST_DIR,
     verbose: bool = False,
-) -> Path:
-    return _bundle_files(workspace_dir=workspace_dir, output_dir=output_dir, verbose=verbose)
+    release: bool=False
+) -> tuple[Path, Path|None]:
+    _clean_dist(output_dir=output_dir, verbose=verbose)
+    zip_file = _bundle_files(workspace_dir=workspace_dir, output_dir=output_dir, verbose=verbose, release=release)
+
+    signature_file = None
+
+    if release:
+        signature_file = _sign_release(zip_file, verbose=True)
+    
+    return (zip_file, signature_file)
 
 
-def setup_environment(
+def setup(
     workspace_dir: str | Path = ROOT,
     venv_dir: str | Path | None = None,
     requirements_file: str | Path | None = None,
@@ -172,7 +257,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build and publish the GT7 Inkscape extension.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    release_parser = subparsers.add_parser("release", help="Create a zip bundle for release.")
+    release_parser = subparsers.add_parser("release", help="Create a signed zip bundle for release.")
+    release_parser.add_argument("--output-dir", default=str(DIST_DIR), help="Where to write the release zip.")
+    release_parser.add_argument("--verbose", action="store_true", help="Print each file added to the release bundle.")
+
+    release_parser = subparsers.add_parser("package", help="Create an unsigned zip bundle for local deployment.")
     release_parser.add_argument("--output-dir", default=str(DIST_DIR), help="Where to write the release zip.")
     release_parser.add_argument("--verbose", action="store_true", help="Print each file added to the release bundle.")
 
@@ -193,8 +282,13 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
+    if args.command == "package":
+        archive = package(output_dir=args.output_dir, verbose=args.verbose, release=False)
+        print(f"Development bundle created: {archive}")
+        return
+
     if args.command == "release":
-        archive = build_release_bundle(output_dir=args.output_dir, verbose=args.verbose)
+        archive = package(output_dir=args.output_dir, verbose=args.verbose, release=True)
         print(f"Release bundle created: {archive}")
         return
 
@@ -204,7 +298,7 @@ def main() -> None:
         return
 
     if args.command == "setup":
-        python_path = setup_environment(workspace_dir=ROOT, venv_dir=args.venv_dir, requirements_file=args.requirements, recreate=args.recreate)
+        python_path = setup(workspace_dir=ROOT, venv_dir=args.venv_dir, requirements_file=args.requirements, recreate=args.recreate)
         print(f"Environment ready: {python_path}")
         return
 

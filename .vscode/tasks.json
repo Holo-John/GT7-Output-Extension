@@ -44,6 +44,26 @@
             "problemMatcher": []
         },
         {
+            "label": "GT7: Package",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "build.py",
+                "package",
+                "--verbose"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "clear": true
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "GT7: Deploy",
             "type": "shell",
             "command": "python",
