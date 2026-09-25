@@ -3627,6 +3627,45 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # region --- Resolve References ---
 
+    def remove_mix_blend_mode_element(self, el:BaseElement) -> int:
+        """
+        Remove a mix-blend-mode attribute from an element and report how many were removed.
+
+        Behavior
+        --------
+        1. Check whether the element has a `mix-blend-mode` attribute.
+        2. If present:
+        - Remove the attribute.
+        - Log the removal.
+        - Return `1`.
+        3. If absent:
+        - Return `0`.
+
+        This keeps the function deterministic and side-effect-free: it only modifies
+        the element itself, not the <defs> tree.
+
+        Parameters
+        ----------
+        el : BaseElement
+            The element whose mix-blend-mode reference should be removed.
+
+        Returns
+        -------
+        int
+            Number of blend mode references removed (0 or 1).
+        """
+
+        # Check direct blend mode attribute
+        blend_mode = el.get("mix-blend-mode")
+        
+        if blend_mode:
+            el.attrib.pop("mix-blend-mode", None)
+
+            self.log(logging.WARNING,f"Removed unsupported blend mode '{blend_mode}' from <{self.node_str(el)}>")
+            return 1
+        
+        return 0
+
     def remove_filter_for_element(self, el:BaseElement) -> int:
         """
         Remove a filter reference from an element and report how many were removed.
@@ -3682,8 +3721,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         """
         Remove a mask reference from an element and report how many were removed.
 
-        This helper mirrors the behavior of `remove_filter_for_element()` and keeps
-        mask cleanup deliberately minimal and local:
+        This helper removes any masks from the element:
 
             - It only removes the *attribute* `mask="url(#...)"` from the element.
             - It does **not** delete the corresponding <mask> node from <defs>.
@@ -3959,6 +3997,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         pattern_count = 0
         marker_count = 0
         paint_order_count = 0
+        blend_mode_count = 0
 
         if node is None:
             node = self.svg
@@ -3980,15 +4019,17 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         match tag:
 
             case "g":
-                self.resolve_gradient_for_group(node)
-                self.resolve_pattern_for_group(node)
-                self.resolve_clippath_for_group(node)
+                grad_count += self.resolve_gradient_for_group(node)
+                pattern_count += self.resolve_pattern_for_group(node)
+                clip_count += self.resolve_clippath_for_group(node)
+                blend_mode_count += self.remove_mix_blend_mode_element(node)
 
             case "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon":
                 grad_count += self.resolve_gradient_for_shape(node)
                 clip_count += self.resolve_clippath_for_shape(node)
                 filter_count += self.remove_filter_for_element(node)
                 mask_count += self.remove_mask_for_element(node)
+                blend_mode_count += self.remove_mix_blend_mode_element(node)
                 pattern_count += self.resolve_pattern_for_shape(node)
                 marker_count += self.resolve_markers_for_element(node)
 
@@ -4012,6 +4053,9 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             if mask_count:
                 self.log(logging.INFO, f"Removed {mask_count} masks")
+
+            if blend_mode_count:
+                self.log(logging.INFO, f"Removed {blend_mode_count} blend mode attributes")
 
             if pattern_count:
                 self.log(logging.INFO, f"Resolved {pattern_count} patterns")

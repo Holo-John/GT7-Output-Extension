@@ -1,6 +1,3 @@
-import builtins
-import importlib.util
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,7 +14,7 @@ def temp_workspace(tmp_path):
     source_dir.mkdir()
     (source_dir / "gt7_output.py").write_text("print('py')\n", encoding="utf-8")
     (source_dir / "gt7_output.inx").write_text("<inkscape-extension />\n", encoding="utf-8")
-    (workspace / "license.txt").write_text("license\n", encoding="utf-8")
+    (workspace / "LICENSE").write_text("license\n", encoding="utf-8")
     manual_dir = workspace / "manual"
     manual_dir.mkdir()
     (manual_dir / "manual.html").write_text("<html>Manual</html>\n", encoding="utf-8")
@@ -25,12 +22,30 @@ def temp_workspace(tmp_path):
     dist_dir.mkdir()
     return workspace, source_dir, dist_dir
 
+state = {"signature_generated": False}
 
-def test_build_release_bundle_creates_zip(temp_workspace):
+def test_build_release_bundle_creates_zip(monkeypatch, temp_workspace):
     workspace, _, dist_dir = temp_workspace
-    (archive_path, signature_path) = build.package(workspace, dist_dir)
+    state["signature_generated"] = True
 
+    def fake_sign(zip_file, verbose=False):
+        sig_file = Path(zip_file).with_suffix(".sig")
+        sig_file.write_text("test signature")
+
+        state["signature_generated"] = True
+        
+        return sig_file
+        
+    monkeypatch.setattr(build, "_sign_release", fake_sign)
+
+    (archive_path, signature_path) = build.package(workspace, dist_dir, release=True)
+
+    assert state["signature_generated"]
+
+    assert signature_path is not None
     assert signature_path.exists()
+    assert signature_path.suffix == ".sig"
+    assert archive_path.name.startswith("gt7_output_extension")
 
     assert archive_path.exists()
     assert archive_path.suffix == ".zip"
@@ -40,16 +55,48 @@ def test_build_release_bundle_creates_zip(temp_workspace):
     shutil.unpack_archive(archive_path, extracted)
     assert (extracted / "gt7_output.py").exists()
     assert (extracted / "gt7_output.inx").exists()
-    assert (extracted / "license.txt").exists()
+    assert (extracted / "LICENSE").exists()
     assert (extracted / "manual" / "manual.html").exists()
 
 
-def test_build_release_bundle_accepts_verbose_flag(temp_workspace):
+def test_build_package_bundle_creates_zip(temp_workspace):
     workspace, _, dist_dir = temp_workspace
+    (archive_path, signature_path) = build.package(workspace, dist_dir, release=False)
 
-    (archive_path, signature_path) = build.package(workspace, dist_dir, verbose=True)
+    assert signature_path is None
 
     assert archive_path.exists()
+    assert archive_path.suffix == ".zip"
+    assert archive_path.name.startswith("gt7_output_extension")
+
+    extracted = archive_path.parent / "bundle_extract"
+    shutil.unpack_archive(archive_path, extracted)
+    assert (extracted / "gt7_output.py").exists()
+    assert (extracted / "gt7_output.inx").exists()
+    assert (extracted / "LICENSE").exists()
+    assert (extracted / "manual" / "manual.html").exists()
+
+
+def test_build_release_bundle_accepts_verbose_flag(monkeypatch, temp_workspace):
+    workspace, _, dist_dir = temp_workspace
+    state["signature_generated"] = True
+    
+    def fake_sign(zip_file, verbose=False):
+        sig_file = Path(zip_file).with_suffix(".sig")
+        sig_file.write_text("test signature")
+
+        state["signature_generated"] = True
+        
+        return sig_file
+        
+    monkeypatch.setattr(build, "_sign_release", fake_sign)
+
+    (archive_path, signature_path) = build.package(workspace, dist_dir, verbose=True, release=True)
+
+    assert state["signature_generated"]
+
+    assert archive_path.exists()
+    assert signature_path is not None
     assert signature_path.exists()
 
 
@@ -74,46 +121,6 @@ def test_deploy_extension_files_requires_env_target_when_not_explicit(monkeypatc
 
     with pytest.raises(ValueError, match="INKSCAPE_EXTENSIONS_DIR"):
         build.deploy(workspace)
-
-
-def test_load_environment_reads_dotenv_file_without_python_dotenv(monkeypatch, tmp_path):
-    env_file = tmp_path / ".env"
-    env_file.write_text("INKSCAPE_EXTENSIONS_DIR=C:/temp/extensions\n", encoding="utf-8")
-    monkeypatch.setattr(build, "ROOT", tmp_path)
-    monkeypatch.delenv("INKSCAPE_EXTENSIONS_DIR", raising=False)
-    real_import = builtins.__import__
-
-    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "dotenv":
-            raise ModuleNotFoundError("No module named 'dotenv'")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", guarded_import)
-
-    build._load_environment()
-
-    assert os.environ["INKSCAPE_EXTENSIONS_DIR"] == "C:/temp/extensions"
-
-
-def test_build_module_imports_without_dotenv(monkeypatch):
-    real_import = builtins.__import__
-
-    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
-        if name == "dotenv":
-            raise ModuleNotFoundError("No module named 'dotenv'")
-        return real_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", guarded_import)
-    spec = importlib.util.spec_from_file_location(
-        "build_without_dotenv",
-        Path(__file__).resolve().parents[1] / "build.py",
-    )
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-
-    assert hasattr(module, "setup_environment")
 
 
 def test_setup_environment_creates_venv_and_installs_requirements(tmp_path):

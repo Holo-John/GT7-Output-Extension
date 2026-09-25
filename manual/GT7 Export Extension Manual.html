@@ -101,7 +101,7 @@ along with this program. If not, visit <a href="https://www.gnu.org/licenses/">G
 </p>
 
 <h2>About GT7 Export Extension</h2>
-The <b>GT7 Export Extension (GT7OE)</b> is an Inkscape output extension that converts SVG 2.0 artwork into SVG 1.1 files compatible with the <b>Gran Turismo 7 Livery Editor</b>.
+The <b>GT7 Export Extension (GT7OE)</b> is an Inkscape output extension that converts SVG 2.0 artwork into SVG 1.1 files compatible with the <a href="https://www.gran-turismo.com/gb/gtsport/news/00_4307308.html">Gran Turismo 7 Livery Editor</a>.
 <p>
 The conversion process aims to preserve the original appearance of the artwork as accurately as possible. Although the exported decal should look visually identical to the original design, the extension may perform extensive modifications to the underlying SVG document structure in order to ensure compatibility with the Gran Turismo 7 livery system.
 </p><p>
@@ -121,14 +121,26 @@ GT7OE is platform-independent and requires Inkscape 1.4 or later to be installed
 Installation requires only a few simple steps:
 </p>
 
+<h3>Extension Manager</h3>
+<ol>
+<li>Start Inkscape and open the Extension Manager under <b>Extensions → Manage Extensions ...</b></li>
+<li>Navigate to the second tab and click the <b>folder button</b> at the bottom</li>
+<li>Select the <b>gt7_output_extension.zip</b> archive and click <b>Open</b></li>
+<li>Verify on the first tab that the extension is installed (locally installed extensions are shown as <b>Orphan Extensions</b>)</li>
+</ol>
+<p>
+This will install the extension and copy the included user manual into your Inkscape extensions folder.
+</p>
+
+<h3>Manual Installation</h3>
+<p>
+If you prefer a minimal installation, follow these instructions:
+</p>
 <ol>
 <li>Extract the contents of the <b>gt7_output_extension.zip</b> archive.</li>
-
 <li>Open Inkscape and navigate to <b>Preferences</b>.</li>
-
 <li>Click the <b>Open</b> button next to the <b>User Extensions</b> folder. This will open the user extensions directory in your operating system's file manager.</li>
-
-<li>Copy the files <span class="typewriter">gt7_output.inx</span> and <span class="typewriter">gt7_output.py</span> into the user extensions directory that was opened in the file manager.</li>
+<li>Copy the files <span class="typewriter">gt7_output.inx</span> and <span class="typewriter">gt7_output.py</span> into the user extensions directory.</li>
 </ol>
 
 <h2>Using GT7OE</h2>
@@ -380,7 +392,7 @@ The following table summarizes GT7OE's support for common SVG 2.0 features and h
       <td><img src="images/cancel.svg" alt="Supported"></td>
       <td>Filters</td>
       <td>
-        Filters are not supported and will be removed from the file.
+        Filters are not supported and will be removed.
 	  </td>
 	</tr>
 	
@@ -388,7 +400,15 @@ The following table summarizes GT7OE's support for common SVG 2.0 features and h
       <td><img src="images/cancel.svg" alt="Supported"></td>
       <td>Masks</td>
       <td>
-        Masks are not supported and will be removed from the file.
+        Masks are not supported and will be removed.
+	  </td>
+	</tr>
+	
+	<tr>
+      <td><img src="images/cancel.svg" alt="Supported"></td>
+      <td>Blend Modes</td>
+      <td>
+        Blend mode attributes are not supported and will be removed.
 	  </td>
 	</tr>
  </tbody>

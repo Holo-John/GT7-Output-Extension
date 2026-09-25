@@ -7,16 +7,16 @@ from InkscapeHarness import (
     discover_svg_files
 )
 
-FILTER_MASK_THRESHOLDS = { "*": 0.5  }
+UNSUPPORTED_FEATURES_THRESHOLDS = { "*": 0.5  }
 
-TEST_SUITE = pathlib.Path("assets/filters_and_masks")
+TEST_SUITE = pathlib.Path("assets/unsupported features")
 
 cases, ids = discover_svg_files(TEST_SUITE)
 
 @pytest.mark.parametrize("case_name, svg_path", cases, ids=ids)
 def test_svg_case(case_name, svg_path, assets_root, request):
     try:
-        result = run_gt7_test(TEST_SUITE.name, case_name, svg_path, assets_root, thresholds=FILTER_MASK_THRESHOLDS)
+        result = run_gt7_test(TEST_SUITE.name, case_name, svg_path, assets_root, thresholds=UNSUPPORTED_FEATURES_THRESHOLDS)
     except Exception as e:
         # Attach a failure result so the HTML report still shows something
         request.node.gt7_result = GT7TestResult(
