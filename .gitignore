@@ -15,7 +15,7 @@ __pycache__/
 *.so
 .Python
 *.egg-info/
-dist/
+dist/*.zip
 build/
 
 # Testing

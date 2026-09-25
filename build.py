@@ -13,8 +13,16 @@ SRC_DIR = ROOT / "src"
 DIST_DIR = ROOT / "dist"
 FILES_TO_INSTALL = ("gt7_output.py", "gt7_output.inx")
 FILES_TO_BUNDLE = FILES_TO_INSTALL + ("LICENSE", "manual")
-BUNDLE_FILE = "gt7_output_extension.zip"
 
+def get_version() -> str:
+    try:
+        return (
+            subprocess.check_output(["git", "describe", "--tags", "--exact-match"],text=True,)
+                .strip()
+                .removeprefix("v")
+        )
+    except Exception:
+        return "dev"
 
 def _load_environment() -> None:
     env_path = ROOT / ".env"
@@ -48,7 +56,10 @@ def _bundle_files(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    archive_path = output_dir / BUNDLE_FILE
+    version = get_version()
+    bundle_file = f"gt7_output_extension-{version}.zip"
+
+    archive_path = output_dir / bundle_file
     with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for relative_name in FILES_TO_BUNDLE:
             source_path = workspace_dir / relative_name
