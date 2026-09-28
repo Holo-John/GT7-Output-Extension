@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+    xmlns="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    width="360"
+    height="150"
+    viewBox="0 0 360 150">
+
+  <defs>
+
+    <!-- Base mesh -->
+    <meshgradient
+        id="mesh-base"
+        gradientUnits="userSpaceOnUse"
+        x="10"
+        y="10">
+
+      <meshrow>
+        <meshpatch>
+          <stop
+              path="c 40,0 80,0 120,0"
+              style="stop-color:#ffffff;stop-opacity:1" />
+          <stop
+              path="c 0,40 0,80 0,120"
+              style="stop-color:#800080;stop-opacity:1" />
+          <stop
+              path="c -40,0 -80,0 -120,0"
+              style="stop-color:#ffffff;stop-opacity:1" />
+          <stop
+              path="c 0,-40 0,-80 0,-120"
+              style="stop-color:#800080;stop-opacity:1" />
+        </meshpatch>
+      </meshrow>
+
+    </meshgradient>
+
+    <!-- First inheritance level -->
+    <meshgradient
+		x="130"
+		y="10"
+        id="mesh-parent"
+        xlink:href="#mesh-base" />
+
+    <!-- Second inheritance level -->
+    <meshgradient
+		x="250"
+		y="10"
+        id="mesh-child"
+        xlink:href="#mesh-parent" />
+
+  </defs>
+
+  <rect
+      x="10"
+      y="10"
+      width="100"
+      height="120"
+      fill="url(#mesh-base)"
+      stroke="#000000"
+      stroke-width="1"/>
+
+  <rect
+      x="130"
+      y="10"
+      width="100"
+      height="120"
+      fill="url(#mesh-parent)"
+      stroke="#000000"
+      stroke-width="1"/>
+
+  <rect
+      x="250"
+      y="10"
+      width="100"
+      height="120"
+      fill="url(#mesh-child)"
+      stroke="#000000"
+      stroke-width="1"/>
+
+  <text
+      x="60"
+      y="145"
+      font-size="12"
+      text-anchor="middle">mesh-base</text>
+
+  <text
+      x="180"
+      y="145"
+      font-size="12"
+      text

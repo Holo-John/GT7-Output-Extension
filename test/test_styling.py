@@ -8,9 +8,14 @@ from InkscapeHarness import (
 
 TEST_SUITE = pathlib.Path("assets/styling")
 
+STYLING_PARAMS = {
+    "compress_output": True,
+    "log_level": "INFO"
+}
+
 cases, ids = discover_svg_files(TEST_SUITE)
 
 @pytest.mark.parametrize("case_name, svg_path", cases, ids=ids)
 def test_svg_case(case_name, svg_path, assets_root, request):
-    result = run_gt7_test(TEST_SUITE.name, case_name, svg_path, assets_root)
+    result = run_gt7_test(TEST_SUITE.name, case_name, svg_path, assets_root, params=STYLING_PARAMS)
     request.node.gt7_result = result

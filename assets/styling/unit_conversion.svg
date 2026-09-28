@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300px" height="100px">
+
+  <!-- px -->
+  <rect
+      x="10px"
+      y="10px"
+      width="40px"
+      height="40px"
+      fill="none"
+      stroke="red"
+      stroke-width="4px"/>
+
+  <!-- mm -->
+  <rect
+      x="60px"
+      y="10px"
+      width="40px"
+      height="40px"
+      fill="none"
+      stroke="green"
+      stroke-width="1mm"/>
+
+  <!-- cm -->
+  <rect
+      x="110px"
+      y="10px"
+      width="40px"
+      height="40px"
+      fill="none"
+      stroke="blue"
+      stroke-width="0.1cm"/>
+
+  <!-- pt -->
+  <rect
+      x="160px"
+      y="10px"
+      width="40px"
+      height="40px"
+      fill="none"
+      stroke="magenta"
+      stroke-width="3pt"/>
+
+  <!-- pc -->
+  <rect
+      x="210px"
+      y="10px"
+      width="40px"
+      height="40px"
+      fill="none"
+      stroke="cyan"
+      stroke-width="0.25pc"/>
+
+  <!-- in -->
+  <rect
+      x="260px"
+      y="10px"
+      width="20px"
+      height="20px"
+      fill="none"
+      stroke="black"
+      stroke-width="0.05in"/>
+
+</svg>

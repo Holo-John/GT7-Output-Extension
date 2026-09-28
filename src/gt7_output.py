@@ -40,7 +40,7 @@ from datetime import datetime
 import math
 import shutil
 from typing import Any, Tuple, Protocol, Callable, Iterator, Set, TypedDict
-from typing import overload, List, Optional, Iterable, Sequence, cast
+from typing import overload, List, Optional, Iterable, Sequence, cast, NamedTuple
 from dataclasses import dataclass
 
 LOG_LEVEL = logging.DEBUG
@@ -124,6 +124,19 @@ class NullWriter:
 
 # endregion
 
+# region named tuples
+
+class ReferenceCount(NamedTuple):
+    gradients: int
+    clips: int
+    filters: int
+    masks: int
+    patterns: int
+    markers: int
+    paint_orders: int
+    blend_modes: int
+
+#end region
 class GT7Output(inkex.OutputExtension):
     """
     Inkscape “Save As → GT7 SVG” output extension.
@@ -1469,53 +1482,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
     # endregion
      
     # region --- Transformation Helpers ---        
-
-    def invert_transform(self, T: Transform) -> Transform:
-        """
-        Invert an Inkex Transform matrix.
-
-        Inkex stores affine transforms in the form:
-            ((a, b, e), (c, d, f))
-        representing the 2x3 matrix:
-
-            [ a  b  e ]
-            [ c  d  f ]
-
-        This function computes the inverse of that matrix. If the determinant is
-        too close to zero (non-invertible transform), an identity Transform is
-        returned instead. The output is a new `Transform` constructed from the
-        six inverse coefficients in Inkex's expected order.
-
-        Parameters
-        ----------
-        T : Transform
-            The affine transform to invert.
-
-        Returns
-        -------
-        Transform
-            The inverse transform, or an identity transform if the matrix is
-            singular.
-        """
-
-
-        # Inkex stores matrix as ((a, b, e), (c, d, f))
-        (a, b, e), (c, d, f) = T.matrix
-
-        det = a * d - b * c
-        if abs(det) < 1e-12:
-            # non-invertible → identity
-            return Transform()
-
-        inv_a =  d / det
-        inv_b = -b / det
-        inv_c = -c / det
-        inv_d =  a / det
-        inv_e = (b * f - d * e) / det
-        inv_f = (c * e - a * f) / det
-
-        return Transform([inv_a, inv_b, inv_c, inv_d, inv_e, inv_f])
-
 
     def shape_bbox(self, node:BaseElement) -> None | tuple[float, float, float, float]:
         """
@@ -3870,7 +3836,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return new_node, count
 
 
-    def resolve_references(self, node:BaseElement|None=None) -> None:
+    def resolve_references(self, node:BaseElement|None=None) -> ReferenceCount:
         """
         Resolve all reference-bearing attributes and paint-server dependencies in the
         SVG tree, using a **postorder traversal** (children first, then the node
@@ -4010,7 +3976,16 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             if tag in ("defs", "styles", "clippath", "pattern", "mask", "filter", "lineargradient", "radialgradient", "meshgradient"): 
                 continue
 
-            self.resolve_references(child)
+            counts = self.resolve_references(child)
+
+            grad_count += counts.gradients
+            clip_count += counts.clips
+            filter_count += counts.filters
+            mask_count += counts.masks
+            pattern_count += counts.patterns
+            marker_count += counts.markers
+            paint_order_count += counts.paint_orders
+            blend_mode_count += counts.blend_modes
 
         # Process node itself after children have been processed
 
@@ -4065,6 +4040,18 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             if paint_order_count:
                 self.log(logging.INFO, f"Resolved {paint_order_count} attributes")
+
+        
+        return ReferenceCount(
+        grad_count,
+            clip_count,
+            filter_count,
+            mask_count,
+            pattern_count,
+            marker_count,
+            paint_order_count,
+            blend_mode_count
+        )
     
 
     def flatten_svg_dom(self, node:BaseElement|None=None, parent_transform:Transform|None=None) -> int:
@@ -6691,16 +6678,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                     self.log(logging.DEBUG, f"[SWEEP] {ref_id} <- {attr} <- {self.node_str(el)}")
                     referenced.add(ref_id)
 
-            # Style attribute
-            style = el.get("style")
-            if style and "url(#" in style:
-                for part in style.split(";"):
-                    if "url(#" in part:
-                        start = part.find("url(#") + 5
-                        end = part.find(")", start)
-                        if end > start:
-                            referenced.add(part[start:end])
-
         return referenced
 
     
@@ -8824,7 +8801,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # region --- Pattern ---
 
-    def normalize_units_for_pattern(self, geoms:List[PathElement], pat:Pattern, shape:BaseElement) -> List[PathElement]:
+    def normalize_pattern_units(self, geoms:List[PathElement], pat:Pattern, shape:BaseElement) -> List[PathElement]:
         """
         Convert a pattern's content units from objectBoundingBox to userSpaceOnUse
         by baking the shape's bounding-box transform into each geometry node and
@@ -8849,30 +8826,115 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         in user space and ready for GT7-safe tiling.
         """
 
+        normalized = geoms
+
+        units = pat.get("patternUnits", "objectBoundingBox")
+        if units == "objectBoundingBox":
+
+            bbox = shape.bounding_box()
+            x = float(pat.get("x") or 0)
+            y = float(pat.get("y") or 0)
+            w = float(pat.get("width") or 0)
+            h = float(pat.get("height") or 0)
+
+            pat.set("x", str(bbox.left + x * bbox.width))
+            pat.set("y", str(bbox.top + y * bbox.height))
+            pat.set("width", str(w * bbox.width))
+            pat.set("height", str(h * bbox.height))
+
+            pat.set("patternUnits", "userSpaceOnUse")
+
         units = pat.get("patternContentUnits", "userSpaceOnUse")
-        if units == "userSpaceOnUse":
-            return geoms
+        if units == "objectBoundingBox":
+            
+            pat_id = pat.get("id", "")
+            self.log(logging.DEBUG,
+                    f"[PAT] Converting pattern id={pat_id} from objectBoundingBox → userSpaceOnUse")
 
-        pat_id = pat.get("id", "")
-        self.log(logging.DEBUG,
-                f"[PAT] Converting pattern id={pat_id} from objectBoundingBox → userSpaceOnUse")
+            # 1. Compute bounding box transform in user space
+            T_bbox = self.bbox_transform(shape)
+            self.log(logging.DEBUG, f"[PAT]   T_bbox={T_bbox}")
 
-        # 1. Compute bounding box transform in user space
-        T_bbox = self.bbox_transform(shape)
-        self.log(logging.DEBUG, f"[PAT]   T_bbox={T_bbox}")
+            x = -float(pat.get("x") or 0)
+            y = -float(pat.get("y") or 0)
+            T_origin = Transform(f"translate({x}, {y})")
+            self.log(logging.DEBUG, f"[PAT]   T_origin={T_origin}")
+            
+            T_combined = T_origin @ T_bbox
+            self.log(logging.DEBUG, f"[PAT]   T_combined={T_combined}")
 
-        # 2. Apply bbox transform to each geometry node
-        normalized = []
-        for g in geoms:
-            _, g_flattened = self.apply_transform_to_node(g, T_bbox)
-            normalized.append(g_flattened)
+            # 2. Apply bbox transform to each geometry node
+            normalized = []
+            for g in geoms:
+                _, g_flattened = self.apply_transform_to_node(g, T_combined)
+                normalized.append(g_flattened)
 
-        # 3. Remove the attribute
-        pat.attrib.pop("patternContentUnits", None)
+            # 3. Remove the attribute
+            pat.set("patternContentUnits", "userSpaceOnUse")
 
-        self.log(logging.DEBUG, f"[PAT] pattern id={pat_id} converted to userSpaceOnUse")
+            self.log(logging.DEBUG, f"[PAT] pattern id={pat_id} converted to userSpaceOnUse")
+
+        self.log_svg(pat, header="AFTER Unit Normalization")
 
         return normalized
+
+
+    def clone_pattern(self, pattern:Pattern, geoms:list[PathElement]) -> tuple[Pattern, list[PathElement]]:
+        """
+        Create a deep copy of a pattern definition and its associated geometry.
+
+        The cloned pattern is inserted into the document's <defs> section and
+        receives new child geometry elements that are independent from the
+        originals. This allows subsequent modifications to pattern coordinates,
+        units, transforms, or geometry without affecting other shapes that
+        reference the source pattern.
+
+        Only tiling- and coordinate-system-related attributes are copied from
+        the original pattern. Geometry IDs are removed from the clones to avoid
+        duplicate identifiers in the document.
+
+        Args:
+        pattern: The source pattern element to clone.
+        geoms: Geometry elements belonging to the pattern.
+
+        Returns:
+        A tuple containing:
+
+        - The newly created pattern element inserted into <defs>.
+        - A list containing the cloned geometry elements attached to the
+        new pattern.
+
+        Example:
+        pattern_clone, geoms_clone = self.clone_pattern(pattern, geoms)
+
+        pattern_clone.set("patternUnits", "userSpaceOnUse")
+        pattern_clone.set("width", "25")
+        """
+
+        svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
+        pattern_clone = inkex.etree.Element(f"{{{svg_ns}}}pattern")
+
+        # copy tiling attributes from original pattern
+        for attr in ("x", "y", "width", "height", "patternUnits", "patternContentUnits", "patternTransform", "preserveAspectRatio", "viewBox"):
+            if attr in pattern.attrib:
+                pattern_clone.set(attr, pattern.get(attr))
+
+        geoms_clone:list[PathElement] = []
+
+        for g in geoms:
+            g_copy:PathElement = g.copy()
+            self.copy_presentation_attributes(g, g_copy)
+            g_copy.attrib.pop("id", None)
+            
+            pattern_clone.append(g_copy)
+            geoms_clone.append(g_copy)
+        
+        pattern_clone.attrib.pop("id", None)
+
+        defs = self.ensure_defs()
+        pattern_clone = self.add_node(pattern_clone, defs)
+
+        return pattern_clone, geoms_clone
 
 
     def resolve_pattern_for_group(self, group:Group) -> int:
@@ -8893,7 +8955,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         3. For each geometry-bearing shape in the group:
         Create a fresh <pattern> clone.
-        Copy tiling attributes (x, y, width, height, patternUnits,
+        Copy tiling attributes (x, y, width, height, patternUnits, patternContentUnits
         patternTransform).
         Clone each geometry node, copying presentation attributes and stripping
         IDs.
@@ -8932,33 +8994,12 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         for shape, _ in self.iter_geometry_subtree(group, "fill", pop_attr=True, only_gt7_geometry=False):
             shapes.append(shape)
 
-            svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
-            pattern_clone = inkex.etree.Element(f"{{{svg_ns}}}pattern")
-    
-            # copy tiling attributes from original pattern
-            for attr in ("x", "y", "width", "height", "patternUnits", "patternTransform"):
-                if attr in pattern.attrib:
-                    pattern_clone.set(attr, pattern.get(attr))
-
-            geoms_clone = []
-    
-            for g in geoms:
-                g_copy = g.copy()
-                self.copy_presentation_attributes(g, g_copy)
-                g_copy.attrib.pop("id", None)
-                
-                pattern_clone.append(g_copy)
-                geoms_clone.append(g_copy)
-            
-            pattern_clone.attrib.pop("id", None)
-    
-            defs = self.ensure_defs()
-            pattern_clone = self.add_node(pattern_clone, defs)
+            pattern_clone, geoms_clone = self.clone_pattern(pattern, geoms)
 
             shape.set("fill", self.node_or_id_to_url(pattern_clone))
 
             # 3. Normalize pattern units (patternUnits + patternContentUnits)
-            self.normalize_units_for_pattern(geoms_clone, pattern_clone, shape)
+            self.normalize_pattern_units(geoms_clone, pattern_clone, shape)
 
         # Generate geometry
         self.pattern_to_geometry(shapes)
@@ -9016,27 +9057,12 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             shape.attrib.pop("fill", None)
             return 0
 
+        pattern_clone, geoms_clone = self.clone_pattern(pattern, geoms)
+
         # 3. Normalize pattern units (patternUnits + patternContentUnits)
-        geoms = self.normalize_units_for_pattern(geoms, pattern, shape)
+        geoms_clone = self.normalize_pattern_units(geoms_clone, pattern_clone, shape)
         
         self.log(logging.DEBUG, f"[PAT] normalized pattern geometry count={len(geoms)}")
-
-        svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
-        pattern_new = inkex.etree.Element(f"{{{svg_ns}}}pattern")
-
-        # copy tiling attributes from original pattern
-        for attr in ("x", "y", "width", "height", "patternUnits", "patternTransform", "preserveAspectRatio", "viewBox"):
-            if attr in pattern.attrib:
-                pattern_new.set(attr, pattern.get(attr))
-
-        for g in geoms:
-            pattern_new.append(g)
-        
-        pattern_new.attrib.pop("id", None)
-
-        defs = self.ensure_defs()
-        pattern_clone = self.add_node(pattern_new, defs)
-
         self.log_svg(pattern_clone, header="CLIPPED PATTERN")
 
         shape.set("fill", self.node_or_id_to_url(pattern_clone))
@@ -9129,10 +9155,8 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         if ref is not None:
             self.log(logging.DEBUG, f"[PAT]   pattern references {self.node_str(ref)}")
 
-            ref_geom = self.resolve_pattern(ref, transform=transform)
-
             if len(pattern) == 0:
-                parts = ref_geom
+                parts = self.resolve_pattern(ref, transform=transform)
 
             # Copy tiling attributes from referenced pattern
             for attr in ("x", "y", "width", "height", "patternUnits", "patternContentUnits", "patternTransform"):
@@ -9302,11 +9326,17 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         cols = math.ceil((bbox.right  - start_x) / pw) + 4
         rows = math.ceil((bbox.bottom - start_y) / ph) + 4
 
+        self.log(logging.DEBUG, f"shape bbox = x={bbox.left}, y = {bbox.top}, w ={bbox.width}, h ={bbox.height}")
+        self.log(logging.DEBUG, f"pattern bbox x={px}, y={py}, w ={pw}, h ={ph}")
+        self.log(logging.DEBUG, f"origin x={origin.x}, y={origin.y}")
+        self.log(logging.DEBUG, f"origin start_x={start_x}, start_y={start_y}, cols={cols}, rows={rows}")
+
         for r in range(rows):
             for c in range(cols):
                 dx = origin.x + (col0 + c) * pw
                 dy = origin.y + (row0 + r) * ph
                 yield dx, dy
+
 
     def pattern_viewbox_transform(self, pattern:Pattern) -> Transform:
         """
@@ -9721,7 +9751,8 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 count += 1
 
         # clipping
-        
+        #TODO toggle clipping for debugging purposes
+        #clipped_geometry = geometry
         clipped_geometry = self.path_intersection(clippaths, geometry)
 
         # Adding to DOM 

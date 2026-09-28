@@ -6,7 +6,7 @@ from InkscapeHarness import (
     discover_svg_files
 )
 
-GRADIENT_THRESHOLDS = { "pattern-with-gradient-chain.svg": 0.5  }
+GRADIENT_THRESHOLDS = { "*": 0.5  }
 
 TEST_SUITE = pathlib.Path("assets/pattern")
 
