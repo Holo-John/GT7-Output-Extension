@@ -666,6 +666,14 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.logger.info(msg, stacklevel=stacklevel)
 
 
+    def log_nodes(self, nodes:list[BaseElement] | list[PathElement], header:str|None=None) -> None:
+        if header:
+            self.log(logging.DEBUG, f"-------------------- {header} --------------------")
+
+        for i, node in enumerate(nodes):
+            self.log(logging.DEBUG, f"{i}: {self.node_str(node)}")
+
+
     def log_svg(self, node:BaseElement|None=None, indent:int=0, header:str="SVG DOM") -> None:
         """
         Recursively log the SVG DOM subtree with indentation, producing a
@@ -8592,14 +8600,14 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 if bbox is not None:
                     self.apply_gradient_default_coords(new_grad, bbox)
 
-                # normailze coordinates to userSpace
-                self.normalize_gradient_units(new_grad, shape)
-                self.log(logging.DEBUG, f"normalized to userSpace: {self.node_str(new_grad)}")
-
                 # apply gradient transform (shape transform is handled later in apply_all_transforms)
                 self.apply_transform_to_gradient(new_grad, T_gradient)
                 new_grad.attrib.pop("gradientTransform", None)
                 self.log(logging.DEBUG, f"gradientTransform applied: {self.node_str(new_grad)}")
+
+                # normalize coordinates to userSpace
+                self.normalize_gradient_units(new_grad, shape)
+                self.log(logging.DEBUG, f"normalized to userSpace: {self.node_str(new_grad)}")
 
                 # safety: no xlink:href left
                 new_grad.attrib.pop("xlink:href", None)
@@ -8677,17 +8685,17 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             if bbox is not None:
                 self.apply_gradient_default_coords(new_grad, bbox)
 
-            # normailze coordinates to userSpace
-            self.normalize_gradient_units(new_grad, shape)
-
-            self.log(logging.DEBUG, f"normalized to userSpace: {self.node_str(new_grad)}")
-
             # apply gradient transform (shape transform is handled later in apply_all_transforms)
             self.apply_transform_to_gradient(new_grad, T_gradient)
             new_grad.attrib.pop("gradientTransform", None)
 
             self.log(logging.DEBUG, f"gradientTransform resolved: {self.node_str(new_grad)}")
+            
+            # normailze coordinates to userSpace
+            self.normalize_gradient_units(new_grad, shape)
 
+            self.log(logging.DEBUG, f"normalized to userSpace: {self.node_str(new_grad)}")
+            
             # safety: no xlink:href left
             new_grad.attrib.pop("xlink:href", None)
 
@@ -8801,7 +8809,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # region --- Pattern ---
 
-    def normalize_pattern_units(self, geoms:List[PathElement], pat:Pattern, shape:BaseElement) -> List[PathElement]:
+    def normalize_pattern_units(self, shape:BaseElement, pat:Pattern, geoms:List[PathElement]) -> List[PathElement]:
         """
         Convert a pattern's content units from objectBoundingBox to userSpaceOnUse
         by baking the shape's bounding-box transform into each geometry node and
@@ -8842,6 +8850,8 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             pat.set("width", str(w * bbox.width))
             pat.set("height", str(h * bbox.height))
 
+            self.log(logging.DEBUG, f"viewbox = {self.pattern_viewbox(pat)}")
+
             pat.set("patternUnits", "userSpaceOnUse")
 
         units = pat.get("patternContentUnits", "userSpaceOnUse")
@@ -8855,18 +8865,10 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             T_bbox = self.bbox_transform(shape)
             self.log(logging.DEBUG, f"[PAT]   T_bbox={T_bbox}")
 
-            x = -float(pat.get("x") or 0)
-            y = -float(pat.get("y") or 0)
-            T_origin = Transform(f"translate({x}, {y})")
-            self.log(logging.DEBUG, f"[PAT]   T_origin={T_origin}")
-            
-            T_combined = T_origin @ T_bbox
-            self.log(logging.DEBUG, f"[PAT]   T_combined={T_combined}")
-
             # 2. Apply bbox transform to each geometry node
             normalized = []
             for g in geoms:
-                _, g_flattened = self.apply_transform_to_node(g, T_combined)
+                _, g_flattened = self.apply_transform_to_node(g, T_bbox)
                 normalized.append(g_flattened)
 
             # 3. Remove the attribute
@@ -8879,7 +8881,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return normalized
 
 
-    def clone_pattern(self, pattern:Pattern, geoms:list[PathElement]) -> tuple[Pattern, list[PathElement]]:
+    def clone_pattern(self, pattern:Pattern) -> tuple[Pattern, list[BaseElement]]:
         """
         Create a deep copy of a pattern definition and its associated geometry.
 
@@ -8919,22 +8921,22 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             if attr in pattern.attrib:
                 pattern_clone.set(attr, pattern.get(attr))
 
-        geoms_clone:list[PathElement] = []
+        geometry_clone = []
 
-        for g in geoms:
+        for g,_ in self.iter_geometry_subtree(pattern, attr="", only_gt7_geometry=False):
             g_copy:PathElement = g.copy()
             self.copy_presentation_attributes(g, g_copy)
             g_copy.attrib.pop("id", None)
-            
-            pattern_clone.append(g_copy)
-            geoms_clone.append(g_copy)
+
+            if self.is_geometry(g, only_gt7_supported=False):
+                geometry_clone.append(g_copy)
+            else:
+                # Any other node
+                pattern_clone.append(g)
         
         pattern_clone.attrib.pop("id", None)
 
-        defs = self.ensure_defs()
-        pattern_clone = self.add_node(pattern_clone, defs)
-
-        return pattern_clone, geoms_clone
+        return pattern_clone, geometry_clone
 
 
     def resolve_pattern_for_group(self, group:Group) -> int:
@@ -8981,12 +8983,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         self.log(logging.DEBUG, f"[PAT] resolving {self.node_str(pattern)}")
 
-        # 2. Resolve pattern geometry (flatten transforms, groups, href)
-        geoms = self.resolve_pattern(pattern, Transform())
-        if not geoms:
-            self.log(logging.DEBUG, f"[PAT] no geometry in {self.node_str(pattern)}")
-            # No geometry → remove pattern
-            return 0
 
         # Gather shapes and attach pattern clone
 
@@ -8994,12 +8990,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         for shape, _ in self.iter_geometry_subtree(group, "fill", pop_attr=True, only_gt7_geometry=False):
             shapes.append(shape)
 
-            pattern_clone, geoms_clone = self.clone_pattern(pattern, geoms)
-
-            shape.set("fill", self.node_or_id_to_url(pattern_clone))
-
-            # 3. Normalize pattern units (patternUnits + patternContentUnits)
-            self.normalize_pattern_units(geoms_clone, pattern_clone, shape)
+            self.resolve_pattern(shape, pattern, Transform())
 
         # Generate geometry
         self.pattern_to_geometry(shapes)
@@ -9050,20 +9041,12 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         self.log(logging.DEBUG, f"[PAT] resolving {self.node_str(pattern)}")
 
         # 2. Resolve pattern geometry (flatten transforms, groups, href)
-        geoms = self.resolve_pattern(pattern, Transform())
+        pattern_clone, geoms = self.resolve_pattern(shape, pattern, Transform())
         if not geoms:
             self.log(logging.DEBUG, f"[PAT] no geometry in {self.node_str(pattern)}")
             # No geometry → remove pattern
             shape.attrib.pop("fill", None)
             return 0
-
-        pattern_clone, geoms_clone = self.clone_pattern(pattern, geoms)
-
-        # 3. Normalize pattern units (patternUnits + patternContentUnits)
-        geoms_clone = self.normalize_pattern_units(geoms_clone, pattern_clone, shape)
-        
-        self.log(logging.DEBUG, f"[PAT] normalized pattern geometry count={len(geoms)}")
-        self.log_svg(pattern_clone, header="CLIPPED PATTERN")
 
         shape.set("fill", self.node_or_id_to_url(pattern_clone))
 
@@ -9118,7 +9101,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             parts.append(item)
 
 
-    def resolve_pattern(self, pattern:Pattern, transform=Transform()) -> List[PathElement]:
+    def resolve_pattern(self, shape:BaseElement, pattern:Pattern, transform=Transform()) -> tuple[Pattern, list[PathElement]]:
         """
         Flatten a <pattern> element into user-space geometry by resolving its own
         children, accumulating transforms, following href chains, and merging the
@@ -9148,24 +9131,88 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         self.log(logging.DEBUG, f"[PAT] resolve {self.node_str(pattern)} transform={transform}")
 
-        parts = self.resolve_pattern_geometry(pattern)
+        self.resolve_pattern_href_chain(pattern)
 
-        # handle href / xlink:href on <pattern> itself
-        ref, _ = self.ref_target(pattern)
-        if ref is not None:
-            self.log(logging.DEBUG, f"[PAT]   pattern references {self.node_str(ref)}")
+        self.log_svg(pattern, header="PATTERN HREF RESOLVED")
 
-            if len(pattern) == 0:
-                parts = self.resolve_pattern(ref, transform=transform)
+        self.resolve_geometry(pattern)
+        self.resolve_references(pattern)
+        self.flatten_svg_dom(pattern)
+        
+        self.log_svg(pattern, header="FLATTENED PATTERN")
 
-            # Copy tiling attributes from referenced pattern
-            for attr in ("x", "y", "width", "height", "patternUnits", "patternContentUnits", "patternTransform"):
-                if attr in ref.attrib and not attr in pattern.attrib:
-                    pattern.set(attr, ref.get(attr))
+        # Clone pattern in defs without geometry, return list of geometry for further processing
+        cloned_pattern, parts = self.clone_pattern(pattern)
+        paths = self.resolve_pattern_geometry(pattern, parts, transform)
+        self.log_nodes(paths, header="RESOLVED PATTERN")
 
-        return parts
+        paths = self.normalize_pattern_units(shape, cloned_pattern, paths)
+        self.log_nodes(paths, header="NORMALIZED PATTERN")
 
-    def resolve_pattern_geometry(self, pattern:Pattern) -> List[PathElement]:
+        viewbox = self.pattern_viewbox(cloned_pattern)
+        clipped_paths = self.path_intersection(viewbox, paths)
+        self.log_nodes(clipped_paths, header="CLIPPED PATTERN")
+        
+        for part in clipped_paths:
+            part.attrib.pop("id", None)
+            cloned_pattern.append(part)
+
+        defs = self.ensure_defs()
+        cloned_pattern = self.add_node(cloned_pattern, defs)
+
+        shape.set("fill", self.node_or_id_to_url(cloned_pattern))
+
+        return cloned_pattern, clipped_paths
+
+
+    def resolve_pattern_href_chain(self, pattern:Pattern) -> List[PathElement]:
+            """
+            Flatten a <pattern> element into user-space geometry by resolving its
+            children, converting all shapes to paths, preserving z-order, and clipping
+            the result to the pattern's viewBox.
+    
+            The routine performs the following steps:
+    
+            - Log the original pattern for debugging.
+            - Resolve geometry and references, then flatten the DOM structure so all
+            transforms and groups are eliminated.
+            - Iterate all geometry nodes using iter_geometry_subtree(), convert
+            each to a path, copy presentation attributes, and append it to the
+            result list while preserving z-order via add_geom_preserving_zorder().
+            - Compute the pattern's viewBox and clip all paths against it using
+            path_intersection().
+            - Remove IDs from the resulting geometry nodes to ensure they are
+            self-contained and safe for cloning.
+    
+            Returns a list of PathElement objects representing the fully flattened,
+            clipped, user-space geometry of the pattern.
+            """
+    
+            parts = [copy.deepcopy(child) for child in pattern]
+    
+            # handle href / xlink:href on <pattern> itself
+            
+            ref, _ = self.ref_target(pattern)
+            if ref is not None:
+                self.log(logging.DEBUG, f"[PAT]   pattern references {self.node_str(ref)}")
+            
+                if len(parts) == 0:            
+                    parts = self.resolve_pattern_href_chain(ref)
+                    
+                    for p in parts:
+                        self.add_node(p, pattern)
+
+                # Copy tiling attributes from referenced pattern
+                for attr in ("x", "y", "width", "height", "patternUnits", "patternContentUnits", "patternTransform"):
+                    if attr in ref.attrib and not attr in pattern.attrib:
+                        pattern.set(attr, ref.get(attr))
+    
+                pattern.attrib.pop("href", None)
+    
+            return parts
+    
+
+    def resolve_pattern_geometry(self, pattern:Pattern, geometry:list[BaseElement], transform:Transform) -> List[PathElement]:
         """
         Flatten a <pattern> element into user-space geometry by resolving its
         children, converting all shapes to paths, preserving z-order, and clipping
@@ -9188,17 +9235,9 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         clipped, user-space geometry of the pattern.
         """
 
-        self.log_svg(pattern, header="ORIGINAL PATTERN")
-
-        self.resolve_geometry(pattern)
-        self.resolve_references(pattern)
-        self.flatten_svg_dom(pattern)
-
-        self.log_svg(pattern, header="FLATTENED PATTERN")
-
         parts = []
 
-        for geom, _ in self.iter_geometry_subtree(pattern, attr="", only_gt7_geometry=False):
+        for geom in geometry:
             path = self.convert_to_path(geom, Transform())
             if path is not None:
                 self.copy_presentation_attributes(geom, path, override=True)
@@ -9206,13 +9245,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             self.log(logging.DEBUG,f"Adding {str(path)}")
             self.add_geom_preserving_zorder(parts, path)
-
-
-        viewbox = self.pattern_viewbox(pattern)
-        parts = self.path_intersection(viewbox, parts)
-
-        for part in parts:
-            part.attrib.pop("id", None)
 
         return parts
     
@@ -9336,6 +9368,16 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 dx = origin.x + (col0 + c) * pw
                 dy = origin.y + (row0 + r) * ph
                 yield dx, dy
+
+
+    def pattern_translation_transform(self, pattern: Pattern) -> Transform:
+        x = -float(pattern.get("x") or 0)
+        y = -float(pattern.get("y") or 0)
+        pattern_t = Transform(f"translate({x}, {y})")
+            
+        self.log(logging.DEBUG, f"[PAT]   pattern_t={pattern_t}")
+        
+        return pattern_t 
 
 
     def pattern_viewbox_transform(self, pattern:Pattern) -> Transform:
@@ -9514,6 +9556,9 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         """
 
         viewbox_t = self.pattern_viewbox_transform(pattern)
+        pattern_t = self.pattern_translation_transform(pattern)
+
+        combined_t = pattern_t @ viewbox_t
 
         log_first_tile = True
         merged = None
@@ -9525,7 +9570,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             # tile transform only
             tile_t = inkex.Transform().add_translate(dx, dy)
-            self.transform_path(clone, tile_t @ viewbox_t)
+            self.transform_path(clone, tile_t @ combined_t)
             
             # incremental merge
             if log_first_tile:
@@ -9585,7 +9630,10 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
         self.log(logging.DEBUG, f"Pattern transform = {pattern_t}")
 
-        viewbox_t = self.pattern_viewbox_transform(pattern)        
+        viewbox_t = self.pattern_viewbox_transform(pattern)
+        pattern_translate_t = self.pattern_translation_transform(pattern)
+        
+        combined_t = pattern_translate_t @ viewbox_t
 
         tiles = []
         log_first_tile = True
@@ -9599,7 +9647,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             # tile transform + pattern transform
             tile_t = inkex.Transform().add_translate(dx, dy)
-            total_t = pattern_t @ tile_t @ viewbox_t
+            total_t = pattern_t @ tile_t @ combined_t
 
             for presentation_attribute in ["fill", "stroke"]:
                 gradient, _ = self.ref_target(node, presentation_attribute, tag_name={"meshgradient", "linearGradient", "radialGradient"})

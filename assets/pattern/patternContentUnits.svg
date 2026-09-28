@@ -48,16 +48,5 @@
       fill="url(#bboxPattern)"
       stroke="black"/>
 
-  <text
-      x="70"
-      y="140"
-      text-anchor="middle"
-      font-size="12">100×100</text>
-
-  <text
-      x="305"
-      y="190"
-      text-anchor="middle"
-      font-size="12">250×150</text>
 
 </svg>

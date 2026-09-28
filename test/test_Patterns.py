@@ -6,13 +6,14 @@ from InkscapeHarness import (
     discover_svg_files
 )
 
-GRADIENT_THRESHOLDS = { "*": 0.5  }
-
 TEST_SUITE = pathlib.Path("assets/pattern")
+
+# Bug in Inkscape, not resolving the gradient chain correctly, while GT7OE computes this as per SVG spec
+PATTERN_THRESHOLDS = { "pattern-with-gradient-chain.svg": 0.0 }
 
 cases, ids = discover_svg_files(TEST_SUITE)
 
 @pytest.mark.parametrize("case_name, svg_path", cases, ids=ids)
 def test_svg_case(case_name, svg_path, assets_root, request):
-    result = run_gt7_test(TEST_SUITE.name, case_name, svg_path, assets_root, thresholds=GRADIENT_THRESHOLDS)
+    result = run_gt7_test(TEST_SUITE.name, case_name, svg_path, assets_root, thresholds=PATTERN_THRESHOLDS)
     request.node.gt7_result = result
