@@ -424,10 +424,12 @@ class GT7Output(inkex.OutputExtension):
             self.log_path = outname + ".log"
 
         # Always recreate the file handler (overwrite mode)
-        if self.file_handler:
-            self.logger.removeHandler(self.file_handler)
-            self.file_handler.close()
-            self.file_handler = None
+        while self.logger.handlers:
+            h = self.logger.handlers[0]
+            self.logger.removeHandler(h)
+            h.close()
+        
+        self.file_handler = None
 
         file_handler = logging.FileHandler(self.log_path, mode="w", encoding="utf-8")
         formatter = logging.Formatter(
@@ -8809,7 +8811,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # region --- Pattern ---
 
-    def normalize_pattern_units(self, shape:BaseElement, pat:Pattern, geoms:List[PathElement]) -> List[PathElement]:
+    def normalize_pattern_units(self, shape:BaseElement, pat:Pattern, geoms:List[PathElement]) -> tuple[list[PathElement], Transform]:
         """
         Convert a pattern's content units from objectBoundingBox to userSpaceOnUse
         by baking the shape's bounding-box transform into each geometry node and
@@ -8835,50 +8837,96 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         """
 
         normalized = geoms
+        T_inverse_translate = Transform()
+
+        bbox = shape.bounding_box()
 
         units = pat.get("patternUnits", "objectBoundingBox")
         if units == "objectBoundingBox":
 
-            bbox = shape.bounding_box()
+            # Scale the pattern tile dimensions
             x = float(pat.get("x") or 0)
             y = float(pat.get("y") or 0)
             w = float(pat.get("width") or 0)
             h = float(pat.get("height") or 0)
 
-            pat.set("x", str(bbox.left + x * bbox.width))
-            pat.set("y", str(bbox.top + y * bbox.height))
-            pat.set("width", str(w * bbox.width))
-            pat.set("height", str(h * bbox.height))
+            x = bbox.left + (x * bbox.width)
+            y = bbox.top + (y * bbox.height)
+            w *= bbox.width
+            h *= bbox.height
 
-            self.log(logging.DEBUG, f"viewbox = {self.pattern_viewbox(pat)}")
+            pat.set("x", str(x))
+            pat.set("y", str(y))
+            pat.set("width", str(w))
+            pat.set("height", str(h))
+
+            self.log(logging.DEBUG, f"bbox = (x={x},y={y},width={w}, height={h})")
+
+            #Scale the viewbox
+            viewbox = self.pattern_viewbox(pat)
+            if viewbox is not None:
+                v_x, v_y, v_w, v_h = viewbox
+
+                v_x = bbox.left + (v_x * bbox.width)
+                v_y = bbox.top + (v_y * bbox.height)
+                v_w = v_w * bbox.width
+                v_h = v_h * bbox.height
+                
+                pat.set("viewBox", f"{v_x} {v_y} {v_w} {v_h}")
 
             pat.set("patternUnits", "userSpaceOnUse")
+
+        else:
+            # patternUnits = userSpace -> translate by p.x / p.y for later clipping
+            # Extract the active tile offsets from the pattern element
+            px = float(pat.get("x") or 0)
+            py = float(pat.get("y") or 0)
+
+            # --- STASH THE TRANSFORMS FOR THE ITERATOR ---
+            pat.set("data-translate-tile-x", str(px))
+            pat.set("data-translate-tile-y", str(py))
+            
+            # Shift the geometry nodes forward so they match the tile clip area (5 to 25)
+            T_user_shift = Transform(f"translate({px},{py})")
+            
+            normalized = []
+            for g in geoms:
+                _, g_flattened = self.apply_transform_to_node(g, T_user_shift)
+                normalized.append(g_flattened)
+                
+            # Set the inverse transform to pull them back down to (0,0) after clipping is complete
+            T_inverse_translate = Transform(f"translate({-px},{-py})")
 
         units = pat.get("patternContentUnits", "userSpaceOnUse")
         if units == "objectBoundingBox":
             
             pat_id = pat.get("id", "")
-            self.log(logging.DEBUG,
-                    f"[PAT] Converting pattern id={pat_id} from objectBoundingBox → userSpaceOnUse")
+            self.log(logging.DEBUG, f"[PAT] Converting pattern id={pat_id} from objectBoundingBox → userSpaceOnUse")
 
-            # 1. Compute bounding box transform in user space
+            # 2. Scale and translate as per shape's bbox transform.
             T_bbox = self.bbox_transform(shape)
-            self.log(logging.DEBUG, f"[PAT]   T_bbox={T_bbox}")
+            
+            self.log(logging.DEBUG, f"[PAT] T_bbox ={T_bbox}")
 
-            # 2. Apply bbox transform to each geometry node
+            # 3. Apply the fixed tile scale transform to each geometry node
             normalized = []
             for g in geoms:
                 _, g_flattened = self.apply_transform_to_node(g, T_bbox)
                 normalized.append(g_flattened)
 
-            # 3. Remove the attribute
+            # 4. Remove the attribute
             pat.set("patternContentUnits", "userSpaceOnUse")
 
             self.log(logging.DEBUG, f"[PAT] pattern id={pat_id} converted to userSpaceOnUse")
 
+            # Compute translation transform to shift geometry back to origin after clipping
+            (_, _, tx), (_, _, ty) = T_bbox.matrix
+            T_inverse_translate = Transform(f"translate({-tx},{-ty})")
+
+
         self.log_svg(pat, header="AFTER Unit Normalization")
 
-        return normalized
+        return normalized, T_inverse_translate
 
 
     def clone_pattern(self, pattern:Pattern) -> tuple[Pattern, list[BaseElement]]:
@@ -8990,7 +9038,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         for shape, _ in self.iter_geometry_subtree(group, "fill", pop_attr=True, only_gt7_geometry=False):
             shapes.append(shape)
 
-            self.resolve_pattern(shape, pattern, Transform())
+            self.resolve_pattern(shape, pattern)
 
         # Generate geometry
         self.pattern_to_geometry(shapes)
@@ -9041,7 +9089,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         self.log(logging.DEBUG, f"[PAT] resolving {self.node_str(pattern)}")
 
         # 2. Resolve pattern geometry (flatten transforms, groups, href)
-        pattern_clone, geoms = self.resolve_pattern(shape, pattern, Transform())
+        pattern_clone, geoms = self.resolve_pattern(shape, pattern)
         if not geoms:
             self.log(logging.DEBUG, f"[PAT] no geometry in {self.node_str(pattern)}")
             # No geometry → remove pattern
@@ -9101,7 +9149,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             parts.append(item)
 
 
-    def resolve_pattern(self, shape:BaseElement, pattern:Pattern, transform=Transform()) -> tuple[Pattern, list[PathElement]]:
+    def resolve_pattern(self, shape:BaseElement, pattern:Pattern) -> tuple[Pattern, list[PathElement]]:
         """
         Flatten a <pattern> element into user-space geometry by resolving its own
         children, accumulating transforms, following href chains, and merging the
@@ -9129,7 +9177,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         the pattern's structural and transform hierarchy.
         """
 
-        self.log(logging.DEBUG, f"[PAT] resolve {self.node_str(pattern)} transform={transform}")
+        self.log(logging.DEBUG, f"[PAT] resolve {self.node_str(pattern)}")
 
         self.resolve_pattern_href_chain(pattern)
 
@@ -9143,22 +9191,25 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         # Clone pattern in defs without geometry, return list of geometry for further processing
         cloned_pattern, parts = self.clone_pattern(pattern)
-        paths = self.resolve_pattern_geometry(pattern, parts, transform)
+        paths = self.resolve_pattern_geometry(pattern, parts)
         self.log_nodes(paths, header="RESOLVED PATTERN")
 
-        paths = self.normalize_pattern_units(shape, cloned_pattern, paths)
+        paths, T_Translate = self.normalize_pattern_units(shape, cloned_pattern, paths)
         self.log_nodes(paths, header="NORMALIZED PATTERN")
 
-        viewbox = self.pattern_viewbox(cloned_pattern)
-        clipped_paths = self.path_intersection(viewbox, paths)
+        clip_area = self.tile_clip_area(cloned_pattern)
+        clipped_paths = self.path_intersection(clip_area, paths)
         self.log_nodes(clipped_paths, header="CLIPPED PATTERN")
         
         for part in clipped_paths:
+            self.transform_path(part, T_Translate)
             part.attrib.pop("id", None)
             cloned_pattern.append(part)
 
         defs = self.ensure_defs()
         cloned_pattern = self.add_node(cloned_pattern, defs)
+
+        self.log_svg(cloned_pattern, header="NORMALIZED XXX PATTERN")
 
         shape.set("fill", self.node_or_id_to_url(cloned_pattern))
 
@@ -9212,7 +9263,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             return parts
     
 
-    def resolve_pattern_geometry(self, pattern:Pattern, geometry:list[BaseElement], transform:Transform) -> List[PathElement]:
+    def resolve_pattern_geometry(self, pattern:Pattern, geometry:list[BaseElement]) -> List[PathElement]:
         """
         Flatten a <pattern> element into user-space geometry by resolving its
         children, converting all shapes to paths, preserving z-order, and clipping
@@ -9249,7 +9300,16 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return parts
     
 
-    def pattern_viewbox(self, pattern:Pattern) -> PathElement:
+    def pattern_viewbox(self, pattern:Pattern) -> tuple[float,float,float,float]|None:
+        vb = pattern.get("viewBox")
+        if not vb:
+            return None
+        
+        minx, miny, w, h = map(float, vb.split())
+        return minx, miny, w, h
+    
+    
+    def tile_clip_area(self, pattern: Pattern) -> PathElement:
         """
         Return a rectangular PathElement representing the pattern's tile box in
         pattern coordinate space.
@@ -9267,27 +9327,28 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         carries no presentation attributes. It is used for clipping pattern
         geometry after flattening.
         """
-
         # Case 1: pattern has a viewBox → use it directly
-        vb = pattern.get("viewBox")
-        if vb:
-            minx, miny, w, h = map(float, vb.split())
-            rect = inkex.PathElement()
-            rect.set("d", f"M {minx} {miny} L {minx+w} {miny} L {minx+w} {miny+h} L {minx} {miny+h} Z")
-            return rect
+        vb = self.pattern_viewbox(pattern)
+        if vb is not None:
+            (x,y,w,h) = vb
 
         # Case 2: patternUnits="userSpaceOnUse" (most common)
         # width/height define the tile box directly
-        w = float(pattern.get("width") or 0)
-        h = float(pattern.get("height") or 0)
-        x = float(pattern.get("x") or 0)
-        y = float(pattern.get("y") or 0)
+        else:
+            w = float(pattern.get("width") or 1)
+            h = float(pattern.get("height") or 1)
+            x = float(pattern.get("x") or 0)
+            y = float(pattern.get("y") or 0)
+
+        # Ensure positive width and height
+        if w < 0: x, w = x + w, -w
+        if h < 0: y, h = y + h, -h
 
         rect = inkex.PathElement()
         rect.set("d", f"M {x} {y} L {x+w} {y} L {x+w} {y+h} L {x} {y+h} Z")
         return rect
-    
-    
+
+
     def presentation_signature(self, el:BaseElement) -> tuple[tuple[str, str | None], ...]:
         """
         Return a tuple of (attribute, value) pairs for all presentation attributes
@@ -9358,26 +9419,29 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         cols = math.ceil((bbox.right  - start_x) / pw) + 4
         rows = math.ceil((bbox.bottom - start_y) / ph) + 4
 
+        tile_shift_x = float(pattern.get("data-translate-tile-x") or 0)
+        tile_shift_y = float(pattern.get("data-translate-tile-y") or 0)
+
         self.log(logging.DEBUG, f"shape bbox = x={bbox.left}, y = {bbox.top}, w ={bbox.width}, h ={bbox.height}")
         self.log(logging.DEBUG, f"pattern bbox x={px}, y={py}, w ={pw}, h ={ph}")
         self.log(logging.DEBUG, f"origin x={origin.x}, y={origin.y}")
         self.log(logging.DEBUG, f"origin start_x={start_x}, start_y={start_y}, cols={cols}, rows={rows}")
+        self.log(logging.DEBUG, f"tile_shift_x={tile_shift_x}, tile_shift_y={tile_shift_y}, cols={cols}, rows={rows}")
 
         for r in range(rows):
             for c in range(cols):
-                dx = origin.x + (col0 + c) * pw
-                dy = origin.y + (row0 + r) * ph
+                #dx = origin.x + (col0 + c) * pw
+                #dy = origin.y + (row0 + r) * ph
+                # Calculate the raw absolute target point on the global canvas
+                abs_x = origin.x + (col0 + c) * pw
+                abs_y = origin.y + (row0 + r) * ph
+                
+                # SUBTRACT THE PATTERN'S ORIGINAL X/Y ANCHOR OFFSET
+                # This prevents the SVG engine from double-shifting your output vectors
+                dx = abs_x - px -tile_shift_x
+                dy = abs_y - py -tile_shift_y
+
                 yield dx, dy
-
-
-    def pattern_translation_transform(self, pattern: Pattern) -> Transform:
-        x = -float(pattern.get("x") or 0)
-        y = -float(pattern.get("y") or 0)
-        pattern_t = Transform(f"translate({x}, {y})")
-            
-        self.log(logging.DEBUG, f"[PAT]   pattern_t={pattern_t}")
-        
-        return pattern_t 
 
 
     def pattern_viewbox_transform(self, pattern:Pattern) -> Transform:
@@ -9556,9 +9620,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         """
 
         viewbox_t = self.pattern_viewbox_transform(pattern)
-        pattern_t = self.pattern_translation_transform(pattern)
-
-        combined_t = pattern_t @ viewbox_t
 
         log_first_tile = True
         merged = None
@@ -9570,7 +9631,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             # tile transform only
             tile_t = inkex.Transform().add_translate(dx, dy)
-            self.transform_path(clone, tile_t @ combined_t)
+            self.transform_path(clone, tile_t @ viewbox_t)
             
             # incremental merge
             if log_first_tile:
@@ -9631,9 +9692,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         self.log(logging.DEBUG, f"Pattern transform = {pattern_t}")
 
         viewbox_t = self.pattern_viewbox_transform(pattern)
-        pattern_translate_t = self.pattern_translation_transform(pattern)
-        
-        combined_t = pattern_translate_t @ viewbox_t
 
         tiles = []
         log_first_tile = True
@@ -9647,7 +9705,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             # tile transform + pattern transform
             tile_t = inkex.Transform().add_translate(dx, dy)
-            total_t = pattern_t @ tile_t @ combined_t
+            total_t = pattern_t @ tile_t @ viewbox_t
 
             for presentation_attribute in ["fill", "stroke"]:
                 gradient, _ = self.ref_target(node, presentation_attribute, tag_name={"meshgradient", "linearGradient", "radialGradient"})
