@@ -8835,16 +8835,22 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         Returns a new list of geometry nodes whose coordinates are fully expressed
         in user space and ready for GT7-safe tiling.
         """
-
         normalized = geoms
         T_inverse_translate = Transform()
 
         bbox = shape.bounding_box()
+        shape_bbox_was_applied = False
 
-        units = pat.get("patternUnits", "objectBoundingBox")
-        if units == "objectBoundingBox":
+        viewbox = self.pattern_viewbox(pat)
 
-            # Scale the pattern tile dimensions
+        pattern_units = pat.get("patternUnits", "objectBoundingBox")
+        content_units = pat.get("patternContentUnits", "userSpaceOnUse")
+        
+        orig_px = float(pat.get("x") or 0)
+        orig_py = float(pat.get("y") or 0)
+
+        ### Handle patternUnits
+        if pattern_units == "objectBoundingBox":
             x = float(pat.get("x") or 0)
             y = float(pat.get("y") or 0)
             w = float(pat.get("width") or 0)
@@ -8860,72 +8866,101 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             pat.set("width", str(w))
             pat.set("height", str(h))
 
+            shape_bbox_was_applied = True  
+
             self.log(logging.DEBUG, f"bbox = (x={x},y={y},width={w}, height={h})")
 
-            #Scale the viewbox
-            viewbox = self.pattern_viewbox(pat)
             if viewbox is not None:
                 v_x, v_y, v_w, v_h = viewbox
-
                 v_x = bbox.left + (v_x * bbox.width)
                 v_y = bbox.top + (v_y * bbox.height)
                 v_w = v_w * bbox.width
                 v_h = v_h * bbox.height
-                
                 pat.set("viewBox", f"{v_x} {v_y} {v_w} {v_h}")
 
             pat.set("patternUnits", "userSpaceOnUse")
 
         else:
-            # patternUnits = userSpace -> translate by p.x / p.y for later clipping
-            # Extract the active tile offsets from the pattern element
-            px = float(pat.get("x") or 0)
-            py = float(pat.get("y") or 0)
+            # Native userSpaceOnUse -> translate by original p.x / p.y for clipping
+            shift_x = orig_px
+            shift_y = orig_py
 
-            # --- STASH THE TRANSFORMS FOR THE ITERATOR ---
-            pat.set("data-translate-tile-x", str(px))
-            pat.set("data-translate-tile-y", str(py))
+            # This handles pure userSpaceOnUse patterns where geometry paths are natively
+            # relative to (0,0), but the pattern tile boundary has an offset (orig_px, orig_py).
+            #
+            # 1. Pipeline Translation: We translate geometries forward by (+orig_px) so they
+            #    line up inside the absolute `tile_clip_area` window for lossless intersection.
+            #    `T_inverse_translate` then pulls the clipped paths back down to a clean local (0,0).
+            #
+            # 2. Grid Generation Mismatch: Inside `iter_pattern_tiles`, the tile layout grid 
+            #    generates positions (`abs_x`) starting from `origin.x` (which already includes `orig_px`).
+            #
+            # 3. Double Symmetrical Subtraction: To correct tile placement calculation 
+            #    (`dx = abs_x - tile_shift_x`), `dx` represents the local transform applied to the 
+            #    cloned path. Because the tile window itself maps onto a layout frame anchored at 
+            #    `orig_px`, your loop needs to subtract BOTH the absolute global grid generation offset 
+            #    AND the local geometry expansion factor to align a tile seam with the shape edge.
+            #
+            # Accumulating `orig_px + orig_px` here allows your single subtraction step in the loop
+            # to cancel out both tracking planes and cleanly flatten the grid down to absolute space.
+            #
+            if content_units == "userSpaceOnUse":
+                shift_x += orig_px
+                shift_y += orig_py
+                
+            pat.set("data-translate-tile-x", str(shift_x))
+            pat.set("data-translate-tile-y", str(shift_y))
             
-            # Shift the geometry nodes forward so they match the tile clip area (5 to 25)
-            T_user_shift = Transform(f"translate({px},{py})")
+            T_user_shift = Transform(f"translate({orig_px},{orig_py})")
             
             normalized = []
             for g in geoms:
                 _, g_flattened = self.apply_transform_to_node(g, T_user_shift)
                 normalized.append(g_flattened)
                 
-            # Set the inverse transform to pull them back down to (0,0) after clipping is complete
-            T_inverse_translate = Transform(f"translate({-px},{-py})")
+            T_inverse_translate = Transform(f"translate({-orig_px},{-orig_py})")
 
-        units = pat.get("patternContentUnits", "userSpaceOnUse")
-        if units == "objectBoundingBox":
-            
+        ### Handle patternContentUnits
+        if viewbox is None and content_units == "objectBoundingBox":
             pat_id = pat.get("id", "")
             self.log(logging.DEBUG, f"[PAT] Converting pattern id={pat_id} from objectBoundingBox → userSpaceOnUse")
 
-            # 2. Scale and translate as per shape's bbox transform.
             T_bbox = self.bbox_transform(shape)
-            
             self.log(logging.DEBUG, f"[PAT] T_bbox ={T_bbox}")
 
-            # 3. Apply the fixed tile scale transform to each geometry node
             normalized = []
             for g in geoms:
                 _, g_flattened = self.apply_transform_to_node(g, T_bbox)
                 normalized.append(g_flattened)
 
-            # 4. Remove the attribute
             pat.set("patternContentUnits", "userSpaceOnUse")
 
-            self.log(logging.DEBUG, f"[PAT] pattern id={pat_id} converted to userSpaceOnUse")
-
-            # Compute translation transform to shift geometry back to origin after clipping
             (_, _, tx), (_, _, ty) = T_bbox.matrix
             T_inverse_translate = Transform(f"translate({-tx},{-ty})")
 
+        # --- USING IMMUTABLE ORIGINAL VALUES ELIMINATES DOUBLE SHIFTING ---
+        elif shape_bbox_was_applied and pattern_units == "objectBoundingBox":
+            # If bounds were shifted to absolute positions but content is userSpaceOnUse,
+            # we use the updated absolute x/y coordinates currently on the tag for clipping bounds,
+            # but stash them for tracking alignment phase offsets.
+            current_px = float(pat.get("x") or 0)
+            current_py = float(pat.get("y") or 0)
+            
+            if current_px != 0 or current_py != 0:
+                pat.set("data-translate-tile-x", str(current_px))
+                pat.set("data-translate-tile-y", str(current_py))
+                
+                T_mixed_shift = Transform(f"translate({current_px},{current_py})")
+                normalized = []
+                for g in geoms:
+                    _, g_flattened = self.apply_transform_to_node(g, T_mixed_shift)
+                    normalized.append(g_flattened)
+                    
+                T_inverse_translate = Transform(f"translate({-current_px},{-current_py})")
+            else:
+                T_inverse_translate = Transform()
 
         self.log_svg(pat, header="AFTER Unit Normalization")
-
         return normalized, T_inverse_translate
 
 
@@ -9419,8 +9454,17 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         cols = math.ceil((bbox.right  - start_x) / pw) + 4
         rows = math.ceil((bbox.bottom - start_y) / ph) + 4
 
-        tile_shift_x = float(pattern.get("data-translate-tile-x") or 0)
-        tile_shift_y = float(pattern.get("data-translate-tile-y") or 0)
+        tile_shift_x = px
+        tile_shift_y = py
+
+        if (pattern.get("data-translate-tile-x") is not None):
+            tile_shift_x = float(pattern.get("data-translate-tile-x") or 0)
+
+        if (pattern.get("data-translate-tile-y") is not None):
+            tile_shift_y = float(pattern.get("data-translate-tile-y") or 0)
+
+        #tile_shift_x = float(pattern.get("data-translate-tile-x") or 0)
+        #tile_shift_y = float(pattern.get("data-translate-tile-y") or 0)
 
         self.log(logging.DEBUG, f"shape bbox = x={bbox.left}, y = {bbox.top}, w ={bbox.width}, h ={bbox.height}")
         self.log(logging.DEBUG, f"pattern bbox x={px}, y={py}, w ={pw}, h ={ph}")
@@ -9438,8 +9482,8 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 
                 # SUBTRACT THE PATTERN'S ORIGINAL X/Y ANCHOR OFFSET
                 # This prevents the SVG engine from double-shifting your output vectors
-                dx = abs_x - px -tile_shift_x
-                dy = abs_y - py -tile_shift_y
+                dx = abs_x - tile_shift_x
+                dy = abs_y - tile_shift_y
 
                 yield dx, dy
 
