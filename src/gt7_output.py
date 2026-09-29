@@ -7410,7 +7410,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # region ---- Mesh Gradients ----
 
-    def resolve_meshgradient_chain(self, mg:MeshGradient) -> Stop:
+    def resolve_meshgradient_chain(self, mg:MeshGradient) -> MeshGradient:
         """
         Resolve a chain of meshgradient references into a single flattened
         gradient definition.
@@ -7432,33 +7432,38 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             "xlink": "http://www.w3.org/1999/xlink"
         }
 
-        # Clone starting gradient
+        # Clone starting child gradient
         merged = copy.deepcopy(mg)
 
-        # Walk chain upward
+        # Walk reference chain upward
         current = mg
         while True:
-            parent, _ = self.ref_target(current)
-            if parent is None:
+            parent_refs = self.ref_target(current)
+            if not parent_refs or parent_refs[0] is None:
                 break
 
-            parent = parent[0]
+            # Safely unpack the referenced parent node
+            parent = parent_refs[0]
+            if isinstance(parent, list) and len(parent) > 0:
+                parent = parent[0]
 
-            # --- inherit attributes ---
+            # 1. Inherit presentation and placement attributes
             for attr, val in parent.attrib.items():
                 if attr not in merged.attrib:
                     merged.set(attr, val)
 
-            # --- inherit stops ---
-            parent_stops = parent.xpath(".//svg:stop", namespaces=ns)
-            merged_stops = merged.xpath(".//svg:stop", namespaces=ns)
+            # 2. Inherit the Mesh Grid Topology (<meshrow> elements)
+            # In SVG 2, if the child defines any row structural geometry, 
+            # it completely overrides the parent's structure.
+            parent_rows = parent.xpath("./svg:meshrow", namespaces=ns)
+            merged_rows = merged.xpath("./svg:meshrow", namespaces=ns)
 
-            if not merged_stops:
-                # child has no stops → inherit all
-                for s in parent_stops:
-                    merged.append(copy.deepcopy(s))
+            if not merged_rows and parent_rows:
+                self.log(logging.DEBUG, f"[MESH] Inheriting {len(parent_rows)} meshrows from parent id={parent.get('id')}")
+                for row in parent_rows:
+                    merged.append(copy.deepcopy(row))
 
-            # continue walking up
+            # Move up to the next link in the href chain
             current = parent
 
         return merged
