@@ -224,14 +224,8 @@ class GT7Output(inkex.OutputExtension):
     
     # region constants
 
-    """
-    Log level applied if no log_level parameter is given.
-    """
     DEFAULT_LOG_LEVEL = logging.DEBUG
 
-    """
-    Name of the log file.
-    """
     LOG_FILE = "gt7_output_extension.log"
 
     SVG_IDENTIFIER_START = re.compile(r"[A-Za-z_]")
@@ -245,9 +239,6 @@ class GT7Output(inkex.OutputExtension):
     STRIP_WHITESPACE_AFTER_CMD_LETTERS = re.compile(r"([MmLlHhVvCcSsQqTtAaZz])\s+")
     STRIP_WHITESPACE_EXCEPT_BETWEEN_ARC_CMD = re.compile(r"(?<![01])\s+(?![01]\s)")
 
-    """
-    Set of attributes supported by GT7 Livery Editor
-    """
     GT7_ATTRS = {
         "id",
         "d",
@@ -665,7 +656,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.msg(f"[WARNING] {msg}")
 
         if self.logger.isEnabledFor(level):
-            self.logger.info(msg, stacklevel=stacklevel)
+            self.logger.log(level, msg, stacklevel=stacklevel)
 
 
     def log_nodes(self, nodes:list[BaseElement] | list[PathElement], header:str|None=None) -> None:
