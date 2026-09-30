@@ -1,6 +1,6 @@
 # GT7 Output Extension - GT7OE
 
-Inkscape output extension that converts SVG 2.0 artwork into SVG 1.1 files compatible with the Gran Turismo 7 Livery Editor.
+Inkscape output extension that converts SVG 2.0 artwork into SVG 1.1 compatible with the Gran Turismo 7 Livery Editor.
 
 ## Quick User Guide
 
