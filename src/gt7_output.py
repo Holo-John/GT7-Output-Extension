@@ -8837,7 +8837,136 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # region --- Pattern ---
 
-    def normalize_pattern_units(self, shape:BaseElement, pat:Pattern, geoms:List[PathElement]) -> tuple[list[PathElement], Transform]:
+    def normalize_pattern_units(self, shape:BaseElement, pat:Pattern, geoms:list[PathElement]) -> Tuple[List[PathElement], Transform]:
+        normalized = geoms
+        T_inverse_translate = inkex.Transform()
+
+        bbox = shape.bounding_box()
+        shape_bbox_was_applied = False
+
+        viewbox = self.pattern_viewbox(pat)
+
+        pattern_units = pat.get("patternUnits", "objectBoundingBox")
+        content_units = pat.get("patternContentUnits", "userSpaceOnUse")
+        
+        orig_px = float(pat.get("x") or 0)
+        orig_py = float(pat.get("y") or 0)
+
+        # =====================================================================
+        # PHASE 1: Resolve outer pattern units down to uniform absolute pixels
+        # =====================================================================
+        if pattern_units == "objectBoundingBox":
+            x = bbox.left + (orig_px * bbox.width)
+            y = bbox.top + (orig_py * bbox.height)
+            w = float(pat.get("width") or 0) * bbox.width
+            h = float(pat.get("height") or 0) * bbox.height
+
+            # Write values back immediately so pattern_viewbox_transform reads absolute units
+            pat.set("x", str(x))
+            pat.set("y", str(y))
+            pat.set("width", str(w))
+            pat.set("height", str(h))
+
+            shape_bbox_was_applied = True  
+            pat.set("patternUnits", "userSpaceOnUse")
+            self.log(logging.DEBUG, f"[PAT] Normalized bbox to absolute: x={x}, y={y}, w={w}, h={h}")
+        else:
+            x = orig_px
+            y = orig_py
+            w = float(pat.get("width") or 0)
+            h = float(pat.get("height") or 0)
+
+        # =====================================================================
+        # PHASE 2: Apply transformations based on viewBox presence
+        # =====================================================================
+        if viewbox is not None:
+            # 1. Fetch browser-accurate scale & layout matrix from your helper
+            T_vb = self.pattern_viewbox_transform(pat)
+            
+            # 2. Add translation to the target absolute tile coordinate (x, y)
+            T_tile_pos = inkex.Transform(f"translate({x},{y})")
+            T_forward = T_tile_pos @ T_vb
+            
+            # 3. Bake the transformation directly into the geometry
+            normalized = []
+            for g in geoms:
+                _, g_flattened = self.apply_transform_to_node(g, T_forward)
+                normalized.append(g_flattened)
+            
+            # 4. SIMPLIFICATION: Since geometry is baked, skip inverse scale on clipping return
+            T_inverse_translate = inkex.Transform() 
+
+            # 5. Prevent double-scaling by deleting the viewBox attribute from the output tag
+            if "viewBox" in pat.attrib:
+                del pat.attrib["viewBox"]
+
+            # This handles pure userSpaceOnUse patterns where geometry paths are natively
+            # relative to (0,0), but the pattern tile boundary has an offset (orig_px, orig_py).
+            if pattern_units == "objectBoundingBox":
+                x += x
+                y += y
+            
+            # Track coordinates for the grid generator
+            pat.set("data-translate-tile-x", str(x))
+            pat.set("data-translate-tile-y", str(y))
+            pat.set("patternContentUnits", "userSpaceOnUse")
+
+        else:
+            # =====================================================================
+            # PHASE 3: Handle patterns WITHOUT a viewBox
+            # =====================================================================
+            if content_units == "objectBoundingBox":
+                self.log(logging.DEBUG, f"[PAT] Converting pattern from objectBoundingBox → userSpaceOnUse")
+                T_bbox = self.bbox_transform(shape)
+                
+                normalized = []
+                for g in geoms:
+                    _, g_flattened = self.apply_transform_to_node(g, T_bbox)
+                    normalized.append(g_flattened)
+                
+                (_, _, tx), (_, _, ty) = T_bbox.matrix
+                T_inverse_translate = inkex.Transform(f"translate({-tx},{-ty})")
+                pat.set("patternContentUnits", "userSpaceOnUse")
+
+            elif shape_bbox_was_applied:
+                # BBox was shifted to absolute position but elements are already in user space coordinates
+                if x != 0 or y != 0:
+                    T_mixed_shift = inkex.Transform(f"translate({x},{y})")
+                    normalized = []
+                    for g in geoms:
+                        _, g_flattened = self.apply_transform_to_node(g, T_mixed_shift)
+                        normalized.append(g_flattened)
+                    T_inverse_translate = inkex.Transform(f"translate({-x},{-y})")
+                
+                pat.set("data-translate-tile-x", str(x))
+                pat.set("data-translate-tile-y", str(y))
+            
+            else:
+                
+                # Native userSpaceOnUse fallback pattern handling
+                if x != 0 or y != 0:
+                    T_forward = inkex.Transform(f"translate({x},{y})")
+                    normalized = []
+                    for g in geoms:
+                        _, g_flattened = self.apply_transform_to_node(g, T_forward)
+                        normalized.append(g_flattened)
+                    
+                    T_inverse_translate = inkex.Transform(f"translate({-x},{-y})")
+
+                    # This handles tile shifting of pure userSpaceOnUse patterns where geometry paths are natively
+                    # relative to (0,0), but the pattern tile boundary has an offset (x, y).
+                    if pattern_units == "userSpaceOnUse":
+                        x += x
+                        y += y
+
+                    pat.set("data-translate-tile-x", str(x))
+                    pat.set("data-translate-tile-y", str(y))
+
+        self.log_svg(pat, header="AFTER Unit Normalization")
+        return normalized, T_inverse_translate
+
+
+    def normalize_pattern_units_old(self, shape:BaseElement, pat:Pattern, geoms:List[PathElement]) -> tuple[list[PathElement], Transform]:
         """
         Convert a pattern's pattern and content units from objectBoundingBox to userSpaceOnUse. This includes:
         
@@ -9715,8 +9844,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         gradient semantics will remain correct.
         """
 
-        viewbox_t = self.pattern_viewbox_transform(pattern)
-
         log_first_tile = True
         merged = None
 
@@ -9727,7 +9854,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             # tile transform only
             tile_t = inkex.Transform().add_translate(dx, dy)
-            self.transform_path(clone, tile_t @ viewbox_t)
+            self.transform_path(clone, tile_t)
             
             # incremental merge
             if log_first_tile:
@@ -9787,8 +9914,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         pattern_t = inkex.Transform(raw_pt) if raw_pt else inkex.Transform()
         self.log(logging.DEBUG, f"Pattern transform = {pattern_t}")
 
-        viewbox_t = self.pattern_viewbox_transform(pattern)
-
         tiles = []
         log_first_tile = True
 
@@ -9801,7 +9926,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             # tile transform + pattern transform
             tile_t = inkex.Transform().add_translate(dx, dy)
-            total_t = pattern_t @ tile_t @ viewbox_t
+            total_t = pattern_t @ tile_t
 
             for presentation_attribute in ["fill", "stroke"]:
                 gradient, _ = self.ref_target(node, presentation_attribute, tag_name={"meshgradient", "linearGradient", "radialGradient"})
