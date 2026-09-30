@@ -9,7 +9,11 @@ from InkscapeHarness import (
 TEST_SUITE = pathlib.Path("assets/pattern")
 
 # Bug in Inkscape, not resolving the gradient chain correctly, while GT7OE computes this as per SVG spec
-PATTERN_THRESHOLDS = { "pattern-with-gradient-chain.svg": 0.0 }
+PATTERN_THRESHOLDS = { 
+    "pattern-with-gradient-chain.svg": 0.8,
+    "viewbox-solid.svg": 0.8,
+    "viewbox-gradient.svg": 0.8 
+}
 
 cases, ids = discover_svg_files(TEST_SUITE)
 

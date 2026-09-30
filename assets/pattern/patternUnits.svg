@@ -25,7 +25,7 @@
 
     <path
         d="M 25 0 L 0 25"
-        stroke="yellow"
+        stroke="orange"
         stroke-width="2"
         fill="none"/>
 

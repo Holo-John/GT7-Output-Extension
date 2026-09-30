@@ -9302,7 +9302,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         defs = self.ensure_defs()
         cloned_pattern = self.add_node(cloned_pattern, defs)
 
-        self.log_svg(cloned_pattern, header="NORMALIZED XXX PATTERN")
+        self.log_svg(cloned_pattern, header="NORMALIZED AND CLIPPED PATTERN")
 
         shape.set("fill", self.node_or_id_to_url(cloned_pattern))
 
@@ -9575,13 +9575,12 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         """
 
         # No viewBox → identity
-        vb = pattern.get("viewBox")
-        if not vb:
-            self.log(logging.DEBUG, "[PAT] {self.node_str(pattern)} has no viewbox")
+        vb = self.pattern_viewbox(pattern)
+        if vb is None:
             return inkex.Transform()
 
         # Parse viewBox
-        minX, minY, vbWidth, vbHeight = map(float, vb.split())
+        (minX, minY, vbWidth, vbHeight) = vb
 
         # Tile rectangle
         pw = float(pattern.get("width") or 0)
