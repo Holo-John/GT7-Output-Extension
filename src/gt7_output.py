@@ -1491,7 +1491,37 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     # endregion
      
-    # region --- Transformation Helpers ---        
+    # region --- Transformation Helpers ---      
+
+    def invert_transform(self, transform:Transform) -> Transform:
+        """
+        Computes and returns the algebraic inverse of the given 2D affine transform.
+        """
+        (a, c, e), (b, d, f) = transform.matrix
+
+        # 1. Compute the determinant of the 2x2 linear transformation part
+        det = a * d - b * c
+
+        if abs(det) < 1e-9:
+            # matrix cannot be inverted
+            return Transform()
+
+        # 2. Invert the linear (scale/rotation/skew) components
+        inv_a =  d / det
+        inv_c = -c / det
+        inv_b = -b / det
+        inv_d =  a / det
+
+        # 3. Invert the translation components (accounts for scale/skew cross-multiplication)
+        inv_e = (c * f - d * e) / det
+        inv_f = (b * e - a * f) / det
+
+        # 4. Construct and return the new inverted Transform object
+        # Assuming your constructor accepts a matrix string, raw elements, or can be mutated:
+        inv_transform = Transform()
+        inv_transform.add_matrix (((inv_a, inv_c, inv_e), (inv_b, inv_d, inv_f)))
+    
+        return inv_transform  
 
     def shape_bbox(self, node:BaseElement) -> None | tuple[float, float, float, float]:
         """
@@ -8818,27 +8848,34 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
     def normalize_pattern_units(self, shape:BaseElement, pat:Pattern, geoms:List[PathElement]) -> tuple[list[PathElement], Transform]:
         """
-        Convert a pattern's content units from objectBoundingBox to userSpaceOnUse
-        by baking the shape's bounding-box transform into each geometry node and
-        removing the patternContentUnits attribute.
+        Convert a pattern's pattern and content units from objectBoundingBox to userSpaceOnUse. This includes:
+        
+        pattern units:
 
-        The routine performs the following steps:
+        - Scaling and translating the pattern bounding box based on the shape's bounding-box transform.
 
-        - Check patternContentUnits; if already userSpaceOnUse, return the geometry
-        list unchanged.
+        - If a viewbox is defined, scaling and translating the viewbox based on the shape's bounding-box transform.
 
-        - Compute the bounding-box transform T_bbox for the shape using
-        bbox_transform(), which represents translate(bx, by) followed by
-        scale(bw, bh) in full user space.
+        - If pattern untis are in "userSpaceOnUse" already, translate geometry to the origin of the pattern bounding 
+        box and compute the inverse translation to shift geometry back after clipping against the pattern tile.
 
-        - Apply T_bbox to every geometry node in the pattern, producing a list of
-        normalized, user-space geometry elements.
+        pattern content units:
+        
+        - Compute the bounding-box transform of the shape.
 
-        - Remove patternContentUnits from the pattern element to finalize the
-        conversion.
+        - Baking the shape's bounding-box transform into each geometry node and
+        changing the patternContentUnits attribute to "userSpaceOnUse".
 
-        Returns a new list of geometry nodes whose coordinates are fully expressed
-        in user space and ready for GT7-safe tiling.
+        - Compute and return an inverse translation function to shift geometry back to
+        the pattern tile's origin after clipping
+
+        Returns a new list of transformed geometry nodes whose coordinates are fully expressed
+        in user space and ready for tile clipping. If geometry had to be translated to align with
+        the pattern's bounding box or viewbox origin (needed for clipping) and inverse translation 
+        matrix is computed and returned to correct this translation after clipping.
+
+        If geometry needs to be translated during tiling, two custom attributes "data-translate-tile-x"
+        and "data-translate-tile-y" will be populated with the corresponding values for tiling.
         """
         normalized = geoms
         T_inverse_translate = Transform()
@@ -8890,40 +8927,56 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             shift_x = orig_px
             shift_y = orig_py
 
-            # This handles pure userSpaceOnUse patterns where geometry paths are natively
-            # relative to (0,0), but the pattern tile boundary has an offset (orig_px, orig_py).
-            #
-            # 1. Pipeline Translation: We translate geometries forward by (+orig_px) so they
-            #    line up inside the absolute `tile_clip_area` window for lossless intersection.
-            #    `T_inverse_translate` then pulls the clipped paths back down to a clean local (0,0).
-            #
-            # 2. Grid Generation Mismatch: Inside `iter_pattern_tiles`, the tile layout grid 
-            #    generates positions (`abs_x`) starting from `origin.x` (which already includes `orig_px`).
-            #
-            # 3. Double Symmetrical Subtraction: To correct tile placement calculation 
-            #    (`dx = abs_x - tile_shift_x`), `dx` represents the local transform applied to the 
-            #    cloned path. Because the tile window itself maps onto a layout frame anchored at 
-            #    `orig_px`, your loop needs to subtract BOTH the absolute global grid generation offset 
-            #    AND the local geometry expansion factor to align a tile seam with the shape edge.
-            #
-            # Accumulating `orig_px + orig_px` here allows your single subtraction step in the loop
-            # to cancel out both tracking planes and cleanly flatten the grid down to absolute space.
-            #
-            if content_units == "userSpaceOnUse":
-                shift_x += orig_px
-                shift_y += orig_py
+            if viewbox is not None:
+                vb_x, vb_y, vb_w, vb_h = viewbox
                 
+                # 1. Fetch target dimensions
+                w = float(pat.get("width") or 0)
+                h = float(pat.get("height") or 0)
+                
+                # 2. Calculate scaling factors
+                scale_x = w / vb_w if vb_w != 0 else 1.0
+                scale_y = h / vb_h if vb_h != 0 else 1.0
+                
+                # 3. Construct the forward transform to full User Space:
+                #    Translate by -viewbox_min to align to 0,0 -> Scale to tile dimensions -> Translate to tile x,y
+                T_forward = Transform()
+                T_forward = T_forward.add_translate(orig_px, orig_py)
+                T_forward = T_forward.add_scale(scale_x, scale_y)
+                T_forward = T_forward.add_translate(-vb_x, -vb_y)
+                
+                # Align shift tracking properties with the global accumulation logic
+                if content_units == "userSpaceOnUse":
+                    shift_x -= orig_px
+                    shift_y -= orig_py
+            else:
+                # This handles pure userSpaceOnUse patterns where geometry paths are natively
+                # relative to (0,0), but the pattern tile boundary has an offset (orig_px, orig_py).
+                if content_units == "userSpaceOnUse":
+                    shift_x += orig_px
+                    shift_y += orig_py
+            
+                T_forward = Transform(f"translate({orig_px},{orig_py})")
+
+            # Write out metadata tracking attributes for the tile grid generator
             pat.set("data-translate-tile-x", str(shift_x))
             pat.set("data-translate-tile-y", str(shift_y))
             
-            T_user_shift = Transform(f"translate({orig_px},{orig_py})")
-            
+            # Apply the forward transform to push path data into the absolute clipping window
             normalized = []
             for g in geoms:
-                _, g_flattened = self.apply_transform_to_node(g, T_user_shift)
+                _, g_flattened = self.apply_transform_to_node(g, T_forward)
                 normalized.append(g_flattened)
-                
-            T_inverse_translate = Transform(f"translate({-orig_px},{-orig_py})")
+
+            # Compute the inverse translation to shift back after clipping
+            if viewbox is not None:
+                # Use a native matrix inverse call to properly unwind the scale/translation combination
+                T_inverse_translate = self.invert_transform(T_forward)
+            else:
+                # Safe to extract raw elements for a pure translation matrix
+                (_, _, tx), (_, _, ty) = T_forward.matrix
+                T_inverse_translate = Transform(f"translate({-tx},{-ty})")
+
 
         ### Handle patternContentUnits
         if viewbox is None and content_units == "objectBoundingBox":
@@ -9340,7 +9393,11 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return parts
     
 
-    def pattern_viewbox(self, pattern:Pattern) -> tuple[float,float,float,float]|None:
+    def pattern_viewbox(self, pattern:Pattern) -> tuple[float,float,float,float] | None:
+        """
+        Returns the viewbox of the given pattern as tuple (minX, minY, width, height)
+        if a viewbox is defined, None
+        """
         vb = pattern.get("viewBox")
         if not vb:
             return None
