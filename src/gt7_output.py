@@ -8129,6 +8129,9 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             if self.tag_name(grad) == "radialGradient":
                 if self.replace_radial_gradient_with_bands(shape, grad, parsed):
                     return True
+            elif self.tag_name(grad) == "linearGradient":
+                if self.replace_linear_gradient_with_bands(shape, grad, parsed):
+                    return True
 
         # Reduce to first + last stop (alpha stripping controlled by global flag).
         # This is also the fallback for unsupported/failed division.
@@ -8157,15 +8160,36 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         """
 
         divided = self.divide_radial_gradients(shape, grad, parsed)
+        return self.insert_divided_gradient_bands(shape, divided)
+
+
+    def replace_linear_gradient_with_bands(
+        self,
+        shape:BaseElement,
+        grad:LinearGradient,
+        parsed:list[tuple[float,Stop]],
+    ) -> bool:
+        """Divide a linear fill into stop-aligned, overlapping clipped layers."""
+
+        divided = self.divide_linear_gradients(shape, grad, parsed)
+        return self.insert_divided_gradient_bands(shape, divided)
+
+
+    def insert_divided_gradient_bands(
+        self,
+        shape:BaseElement,
+        divided:list[BaseElement],
+    ) -> bool:
+        """Insert divided fill layers below the source shape and clear its fill."""
+
         if not divided:
             self.log(logging.WARNING,
-                     f"Radial gradient division produced no geometry for {self.node_str(shape)}")
+                     f"Gradient division produced no geometry for {self.node_str(shape)}")
             return False
 
         parent, index = self.parent_of(shape)
         if parent is None:
-            self.log(logging.WARNING,
-                     f"Cannot insert radial gradient bands for detached shape {self.node_str(shape)}")
+            self.log(logging.WARNING, f"Cannot insert gradient bands for detached shape {self.node_str(shape)}")
             return False
 
         # Preserve the batch order: child order controls the bands' z-order.
@@ -8183,6 +8207,131 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.remove_node(shape, parent)
 
         return True
+
+
+    def divide_linear_gradients(
+        self,
+        shape:BaseElement,
+        grad:LinearGradient,
+        parsed:list[tuple[float,Stop]],
+    ) -> list[BaseElement]:
+        """
+        Build a full-shape base plus cumulative half-plane overlays for a
+        multi-stop linear gradient, clipping all overlays in one Inkscape call.
+
+        The base carries the first stop interval. Each later layer begins at
+        that interval's starting stop and overlays everything beyond it; the
+        layer is clipped to the original shape. Result IDs from
+        clipped_path_index() map each result back to its source region and
+        therefore its stop-pair gradient.
+        """
+
+        if len(parsed) < 2:
+            return []
+
+        try:
+            x1 = float(grad.get("x1") or "")
+            y1 = float(grad.get("y1") or "")
+            x2 = float(grad.get("x2") or "")
+            y2 = float(grad.get("y2") or "")
+        except ValueError:
+            self.log(logging.WARNING,
+                     f"Cannot divide linear gradient {grad.get('id')}: invalid coordinates")
+            return []
+
+        dx = x2 - x1
+        dy = y2 - y1
+        length = math.hypot(dx, dy)
+        if length == 0:
+            self.log(logging.WARNING,
+                     f"Cannot divide linear gradient {grad.get('id')}: zero-length axis")
+            return []
+
+        bbox = shape.bounding_box()
+        if bbox is None:
+            self.log(logging.WARNING,
+                     f"Cannot divide linear gradient {grad.get('id')}: shape has no bounding box")
+            return []
+
+        ux, uy = dx / length, dy / length
+        nx, ny = -uy, ux
+        corners = (
+            (bbox.left, bbox.top),
+            (bbox.right, bbox.top),
+            (bbox.right, bbox.bottom),
+            (bbox.left, bbox.bottom),
+        )
+        along = [(x - x1) * ux + (y - y1) * uy for x, y in corners]
+        across = [(x - x1) * nx + (y - y1) * ny for x, y in corners]
+        margin = max(bbox.width, bbox.height, length, 1.0)
+        far_along = max(along) + margin
+        low_across = min(across) - margin
+        high_across = max(across) + margin
+
+        stops = [(min(1.0, max(0.0, offset)), stop) for offset, stop in parsed]
+        intervals: list[tuple[float, Stop, float, Stop]] = []
+        if stops[0][0] > 0:
+            intervals.append((0.0, stops[0][1], stops[0][0], stops[0][1]))
+        for (start, start_stop), (end, end_stop) in zip(stops, stops[1:]):
+            if end > start:
+                intervals.append((start, start_stop, end, end_stop))
+        if stops[-1][0] < 1:
+            intervals.append((stops[-1][0], stops[-1][1], 1.0, stops[-1][1]))
+
+        if len(intervals) < 2:
+            return []
+
+        def half_plane_path(offset:float) -> PathElement:
+            along_start = offset * length
+            points = (
+                (x1 + ux * along_start + nx * low_across,
+                 y1 + uy * along_start + ny * low_across),
+                (x1 + ux * far_along + nx * low_across,
+                 y1 + uy * far_along + ny * low_across),
+                (x1 + ux * far_along + nx * high_across,
+                 y1 + uy * far_along + ny * high_across),
+                (x1 + ux * along_start + nx * high_across,
+                 y1 + uy * along_start + ny * high_across),
+            )
+            region = inkex.PathElement()
+            region.set("d", "M " + " L ".join(f"{x},{y}" for x, y in points) + " Z")
+            return region
+
+        base_interval = intervals[0]
+        base = copy.deepcopy(shape)
+        base.attrib.pop("id", None)
+        base.attrib.pop("style", None)
+        base.set("stroke", "none")
+        for marker_attr in ("marker-start", "marker-mid", "marker-end"):
+            base.attrib.pop(marker_attr, None)
+        self.assign_gradient_segment(base, grad, *base_interval)
+
+        regions: list[BaseElement] = []
+        for start_offset, start_stop, end_offset, end_stop in intervals[1:]:
+            region = half_plane_path(start_offset)
+            self.copy_presentation_attributes(shape, region)
+            region.set("stroke", "none")
+            for marker_attr in ("marker-start", "marker-mid", "marker-end"):
+                region.attrib.pop(marker_attr, None)
+            self.assign_gradient_segment(
+                region, grad, start_offset, start_stop, end_offset, end_stop
+            )
+            regions.append(region)
+
+        if not regions:
+            return [base]
+
+        clipped = self.path_intersection(shape, regions)
+        mapped: dict[int, list[PathElement]] = {}
+        for path in clipped:
+            clip_index, region_index = self.clipped_path_index(path)
+            if clip_index != 0 or region_index is None or region_index >= len(regions):
+                self.log(logging.WARNING,
+                         f"Cannot map clipped linear-gradient piece {self.node_str(path)} to its region")
+                return []
+            mapped.setdefault(region_index, []).append(path)
+
+        return [base, *(path for region_index in sorted(mapped) for path in mapped[region_index])]
 
 
     def divide_radial_gradients(self, shape:BaseElement, grad:RadialGradient, parsed:list[tuple[float,Stop]]) -> list[BaseElement]:
@@ -8272,7 +8421,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         base.set("stroke", "none")
         for marker_attr in ("marker-start", "marker-mid", "marker-end"):
             base.attrib.pop(marker_attr, None)
-        self.assign_radial_band_gradient(base, grad, *base_interval)
+        self.assign_gradient_segment(base, grad, *base_interval)
 
         ellipses: list[BaseElement] = []
         for inner_offset, inner_stop, outer_offset, outer_stop in outer_to_inner[1:]:
@@ -8283,7 +8432,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             for marker_attr in ("marker-start", "marker-mid", "marker-end"):
                 band.attrib.pop(marker_attr, None)
 
-            self.assign_radial_band_gradient(
+            self.assign_gradient_segment(
                 band,
                 grad,
                 inner_offset,
@@ -8297,18 +8446,19 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return [base, *clipped_ellipses]
 
 
-    def assign_radial_band_gradient(
+    def assign_gradient_segment(
         self,
         band:BaseElement,
-        source_gradient:RadialGradient,
+        source_gradient:LinearGradient|RadialGradient,
         start_offset:float,
         start_stop:Stop,
         end_offset:float,
         end_stop:Stop,
     ) -> None:
         """
-        Clone a normalized radial gradient, retain its geometry, replace its
-        stops with the pair for a radial band, and assign it as the band's fill.
+        Clone a normalized linear or radial gradient, retain its geometry,
+        replace its stops with the pair for one divided region, and assign it
+        as the region's fill.
 
         The stop offsets remain in the source gradient's coordinate space so
         the two-stop gradient retains the same color interpolation across its
@@ -8318,8 +8468,8 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         """
 
         gradient = self.clone_gradient(source_gradient)
-        if self.tag_name(gradient).lower() != "radialgradient":
-            raise TypeError("A radial band requires a radialGradient source")
+        if self.tag_name(gradient).lower() not in ("lineargradient", "radialgradient"):
+            raise TypeError("A gradient segment requires a linearGradient or radialGradient source")
 
         svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
         for stop in list(gradient.iterfind(f".//{{{svg_ns}}}stop")):
@@ -11255,7 +11405,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return doc, cp_ids, path_ids, stroke_ids
 
 
-    def clipped_path_index(self, node):
+    def clipped_path_index(self, node) -> tuple[int | None, int | None]:
         """
         Extract the clipPath and path indices encoded in a result path's ID.
 

@@ -234,7 +234,7 @@ DEFAULT_PARAMS = {
     "rounding_precision": 3, 
     "mesh_divisions": 4,
     "log_level": "DEBUG",
-    "gradient_division": False
+    "gradient_division": True
 }
 
 def resolve_threshold(svg_path: pathlib.Path, thresholds: dict[str, float]) -> float:
