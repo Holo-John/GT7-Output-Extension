@@ -457,6 +457,7 @@ class GT7Output(inkex.OutputExtension):
         pars.add_argument("--mesh_divisions", type=int, default=16)
         pars.add_argument("--compress_output", type=inkex.Boolean, default=False) # type: ignore
         pars.add_argument("--log_level", type=str, default=False) # type: ignore
+        pars.add_argument("--gradient_division", type=inkex.Boolean, default=False) # type: ignore
         
     def effect(self):
         """
@@ -526,6 +527,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.log(logging.INFO, f"compress ouput: {self.options.compress_output}")
             self.log(logging.INFO, f"rounding precision: {self.options.rounding_precision}")
             self.log(logging.INFO, f"mesh divisions: {self.options.mesh_divisions}")
+            self.log(logging.INFO, f"gradient division: {self.options.gradient_division}")
             self.log(logging.INFO, f"strip alpha: {self.options.strip_alpha}")
             self.log(logging.INFO, f"tracing: {self.options.log_level}")
 
@@ -8102,35 +8104,246 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return first, last
     
 
-    def normalize_gradient_stops_and_colors(self, grad:LinearGradient|RadialGradient) -> None:
+    def normalize_gradient_stops_and_colors(self, shape:BaseElement, attr: str, grad:LinearGradient|RadialGradient) -> bool:
         """
-        Normalize a gradient's stop list by reducing it to a canonical two-stop
-        form and stripping alpha channels according to the global configuration.
+        Normalize a gradient's stop list and strip alpha channels according to
+        the global configuration.
 
         The routine first parses and sorts all <stop> elements using
-        parse_and_sort_stops(). If no stops exist, the gradient is left unchanged.
-        Otherwise, reduce_to_first_and_last_stop() is applied, which enforces
-        offsets 0 and 1, removes intermediate stops, and rewrites stop-color /
-        stop-opacity when alpha stripping is enabled.
+        parse_and_sort_stops(). When radial fill division is enabled and
+        succeeds, clipped bands replace the source fill and True is returned.
+        Otherwise, reduce_to_first_and_last_stop() enforces offsets 0 and 1,
+        removes intermediate stops, and rewrites stop-color / stop-opacity.
 
-        A debug log entry records the gradient's ID and whether alpha stripping
-        was active. No value is returned; the gradient is modified in place.
+        Returns True if the shape was replaced with divided radial bands;
+        otherwise returns False and leaves the normalized gradient on the
+        caller's ordinary assignment path.
         """
 
         # Parse + sort stops (svg-API safe)
         parsed = self.parse_and_sort_stops(grad)
         if not parsed:
-            return
+            return False
 
-        # Reduce to first + last stop (alpha stripping controlled by global flag)
+        if attr == "fill" and len(parsed) > 2 and self.options.gradient_division:
+            if self.tag_name(grad) == "radialGradient":
+                if self.replace_radial_gradient_with_bands(shape, grad, parsed):
+                    return True
+
+        # Reduce to first + last stop (alpha stripping controlled by global flag).
+        # This is also the fallback for unsupported/failed division.
         self.reduce_to_first_and_last_stop(grad, parsed)
 
-        # Logging
         gid = grad.get("id", "")
         self.log(logging.DEBUG,
                  f"Normalized gradient stops for id={gid} "
                  f"(first+last only, alpha stripped={self.options.strip_alpha})")
 
+        return False
+
+
+    def replace_radial_gradient_with_bands(
+        self,
+        shape:BaseElement,
+        grad:RadialGradient,
+        parsed:list[tuple[float,Stop]],
+    ) -> bool:
+        """
+        Divide a radial fill, insert its clipped bands below the original shape,
+        and leave the original shape in place only when it has visible paint
+        other than the replaced fill (typically its stroke).
+
+        Returns True when at least one non-empty clipped band was inserted.
+        """
+
+        divided = self.divide_radial_gradients(shape, grad, parsed)
+        if not divided:
+            self.log(logging.WARNING,
+                     f"Radial gradient division produced no geometry for {self.node_str(shape)}")
+            return False
+
+        parent, index = self.parent_of(shape)
+        if parent is None:
+            self.log(logging.WARNING,
+                     f"Cannot insert radial gradient bands for detached shape {self.node_str(shape)}")
+            return False
+
+        # Preserve the batch order: child order controls the bands' z-order.
+        insert_index = index
+        for offset, band in enumerate(divided):
+            if offset > 0 and self.is_empty_path(band):
+                continue
+            band.set("stroke", "none")
+            band.attrib.pop("id", None)
+            self.add_node(band, parent, insert_index)
+            insert_index += 1
+
+        shape.set("fill", "none")
+        if not self.is_geometry_visible(shape):
+            self.remove_node(shape, parent)
+
+        return True
+
+
+    def divide_radial_gradients(self, shape:BaseElement, grad:RadialGradient, parsed:list[tuple[float,Stop]]) -> list[BaseElement]:
+        """
+        Build a full-shape base band and nested, stop-aligned radial ellipses.
+
+        At stop offset ``t``, the contour radius is ``t * r`` and its center is
+        ``t`` of the way from the focal point to the gradient center. This
+        supports off-center focal points and uses the normalized radius,
+        including the configured approximation for non-uniform transforms.
+
+        Returned elements are ordered bottom to top. The first is an unclipped
+        copy of the original shape, assigned the outermost stop-pair gradient.
+        The remaining elements are full ellipses clipped to the original shape
+        in one batch. They are nested from large to small and intentionally
+        retain their inner areas, which are covered by later ellipses.
+
+        There is one band per non-zero-width stop interval, including
+        constant-color regions before the first stop and between the last stop
+        and offset 1.
+        `parsed` is the sorted output of `parse_and_sort_stops()`, allowing the
+        caller to share its parsed stops with gradient normalization.
+        """
+
+        if len(parsed) < 2:
+            self.log(logging.WARNING,
+                     f"Cannot divide radial gradient {grad.get('id')}: fewer than two stops")
+            return []
+
+        try:
+            cx = float(grad.get("cx") or "")
+            cy = float(grad.get("cy") or "")
+            fx = float(grad.get("fx") or cx)
+            fy = float(grad.get("fy") or cy)
+            radius = float(grad.get("r") or "")
+        except ValueError:
+            self.log(logging.WARNING,
+                     f"Cannot divide radial gradient {grad.get('id')}: invalid geometry")
+            return []
+
+        if radius <= 0:
+            self.log(logging.WARNING,
+                     f"Cannot divide radial gradient {grad.get('id')}: radius must be positive")
+            return []
+
+        if math.hypot(cx - fx, cy - fy) >= radius:
+            self.log(logging.WARNING,
+                     f"Cannot divide radial gradient {grad.get('id')}: "
+                     "focal point is outside or on the gradient circle")
+            return []
+
+        stops = [(min(1.0, max(0.0, offset)), stop) for offset, stop in parsed]
+        intervals: list[tuple[float, Stop, float, Stop]] = []
+
+        if stops[0][0] > 0:
+            intervals.append((0.0, stops[0][1], stops[0][0], stops[0][1]))
+
+        for (start, start_stop), (end, end_stop) in zip(stops, stops[1:]):
+            if end > start:
+                intervals.append((start, start_stop, end, end_stop))
+
+        if stops[-1][0] < 1:
+            intervals.append((stops[-1][0], stops[-1][1], 1.0, stops[-1][1]))
+
+        if not intervals:
+            self.log(logging.WARNING,
+                     f"Cannot divide radial gradient {grad.get('id')}: no non-zero stop intervals")
+            return []
+
+        def circle_path(offset:float) -> str:
+            contour_cx = fx + offset * (cx - fx)
+            contour_cy = fy + offset * (cy - fy)
+            contour_r = offset * radius
+            right = contour_cx + contour_r
+            left = contour_cx - contour_r
+            return (
+                f"M {right},{contour_cy} "
+                f"A {contour_r},{contour_r} 0 1 0 {left},{contour_cy} "
+                f"A {contour_r},{contour_r} 0 1 0 {right},{contour_cy} Z"
+            )
+
+        outer_to_inner = list(reversed(intervals))
+        base_interval = outer_to_inner[0]
+        base = copy.deepcopy(shape)
+        base.attrib.pop("id", None)
+        base.attrib.pop("style", None)
+        base.set("stroke", "none")
+        for marker_attr in ("marker-start", "marker-mid", "marker-end"):
+            base.attrib.pop(marker_attr, None)
+        self.assign_radial_band_gradient(base, grad, *base_interval)
+
+        ellipses: list[BaseElement] = []
+        for inner_offset, inner_stop, outer_offset, outer_stop in outer_to_inner[1:]:
+            band = inkex.PathElement()
+            band.set("d", circle_path(outer_offset))
+            self.copy_presentation_attributes(shape, band)
+            band.set("stroke", "none")
+            for marker_attr in ("marker-start", "marker-mid", "marker-end"):
+                band.attrib.pop(marker_attr, None)
+
+            self.assign_radial_band_gradient(
+                band,
+                grad,
+                inner_offset,
+                inner_stop,
+                outer_offset,
+                outer_stop,
+            )
+            ellipses.append(band)
+
+        clipped_ellipses = self.path_intersection(shape, ellipses) if ellipses else []
+        return [base, *clipped_ellipses]
+
+
+    def assign_radial_band_gradient(
+        self,
+        band:BaseElement,
+        source_gradient:RadialGradient,
+        start_offset:float,
+        start_stop:Stop,
+        end_offset:float,
+        end_stop:Stop,
+    ) -> None:
+        """
+        Clone a normalized radial gradient, retain its geometry, replace its
+        stops with the pair for a radial band, and assign it as the band's fill.
+
+        The stop offsets remain in the source gradient's coordinate space so
+        the two-stop gradient retains the same color interpolation across its
+        clipped interval. A repeated stop is used for constant-color bands.
+        Gradient transforms and references are removed because their geometry
+        must already have been normalized before this method is called.
+        """
+
+        gradient = self.clone_gradient(source_gradient)
+        if self.tag_name(gradient).lower() != "radialgradient":
+            raise TypeError("A radial band requires a radialGradient source")
+
+        svg_ns = self.svg.nsmap.get(None, "http://www.w3.org/2000/svg")
+        for stop in list(gradient.iterfind(f".//{{{svg_ns}}}stop")):
+            self.remove_node(stop, gradient)
+
+        gradient.attrib.pop("gradientTransform", None)
+        gradient.attrib.pop("href", None)
+        gradient.attrib.pop(f"{{{self.XLINK_NS}}}href", None)
+        gradient.set("gradientUnits", "userSpaceOnUse")
+
+        for offset, source_stop in (
+            (start_offset, start_stop),
+            (end_offset, end_stop),
+        ):
+            stop = copy.deepcopy(source_stop)
+            stop.attrib.pop("id", None)
+            stop.set("offset", str(offset))
+            self.strip_alpha_from_stop(stop)
+            gradient.add(stop)
+
+        defs = self.ensure_defs()
+        self.add_node(gradient, defs)
+        
+        band.set("fill", self.node_or_id_to_url(gradient))
 
     def normalize_gradient_units(self, grad:LinearGradient|RadialGradient, shape:BaseElement) -> None:
         """
@@ -8641,8 +8854,12 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 new_grad.attrib.pop("xlink:href", None)
 
                 # normalize stops
-                self.normalize_gradient_stops_and_colors(new_grad)
+                divided = self.normalize_gradient_stops_and_colors(shape, attr, new_grad)
                 self.log(logging.DEBUG, f"normalized stops and colors: {self.node_str(new_grad)}")
+
+                if divided:
+                    changed += 1
+                    continue
 
                 # ensure defs and register new gradient
                 defs = self.ensure_defs()
@@ -8728,9 +8945,13 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             new_grad.attrib.pop("xlink:href", None)
 
             # normalize stops
-            self.normalize_gradient_stops_and_colors(new_grad)
+            divided = self.normalize_gradient_stops_and_colors(shape, attr, new_grad)
 
             self.log(logging.DEBUG, f"normalized stops and colors: {self.node_str(new_grad)}")
+
+            if divided:
+                changed += 1
+                continue
 
             # ensure defs and register new gradient
             defs = self.ensure_defs()

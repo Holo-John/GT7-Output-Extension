@@ -33,6 +33,8 @@
 
   <param name="mesh_divisions" type="int" gui-text="Gradient mesh subdivision count" min="2">2</param>
 
+  <param name="gradient_division" type="boolean" gui-text="Split shapes to approximate multi-stop linear and radial gradients">false</param>
+
   <param name="compress_output" type="boolean" gui-text="Compress exported GT7 file">false</param>
 
   <param name="log_level" type="optiongroup" gui-text="Maximum log level for gt7_output.log">
