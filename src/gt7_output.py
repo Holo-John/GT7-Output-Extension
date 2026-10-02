@@ -4027,20 +4027,20 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         match tag:
 
             case "g":
+                clip_count += self.resolve_clippath_for_group(node)
                 grad_count += self.resolve_gradient_for_group(node)
                 pattern_count += self.resolve_pattern_for_group(node)
-                clip_count += self.resolve_clippath_for_group(node)
                 blend_mode_count += self.remove_mix_blend_mode_element(node)
 
             case "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon":
-                grad_count += self.resolve_gradient_for_shape(node)
                 clip_count += self.resolve_clippath_for_shape(node)
+                marker_count += self.resolve_markers_for_element(node)
+                grad_count += self.resolve_gradient_for_shape(node)
+                pattern_count += self.resolve_pattern_for_shape(node)
                 filter_count += self.remove_filter_for_element(node)
                 mask_count += self.remove_mask_for_element(node)
                 blend_mode_count += self.remove_mix_blend_mode_element(node)
-                pattern_count += self.resolve_pattern_for_shape(node)
-                marker_count += self.resolve_markers_for_element(node)
-
+                
             case "clippath":
                 pass
 
