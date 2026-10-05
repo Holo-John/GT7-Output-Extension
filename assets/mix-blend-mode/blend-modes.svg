@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="451.51791"
+   height="442.02954"
+   viewBox="0 0 451.51791 442.02954"
+   version="1.1"
+   id="svg19"
+   sodipodi:docname="blend-modes.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs19" />
+  <sodipodi:namedview
+     id="namedview19"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="1.3055556"
+     inkscape:cx="-14.93617"
+     inkscape:cy="89.234043"
+     inkscape:window-width="2560"
+     inkscape:window-height="1377"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg19" />
+  <style
+     id="style1">
+    text {
+      font-family: Arial, sans-serif;
+      font-size: 18px;
+    }
+
+    .bg {
+      fill: #ff8800;
+    }
+
+    .fg {
+      fill: #0088ff;
+    }
+  </style>
+  <!-- multiply -->
+  <text
+     x="22.507261"
+     y="12.884766"
+     id="text1">multiply</text>
+  <rect
+     class="bg"
+     x="53.400845"
+     y="56.717224"
+     width="342.12766"
+     height="328.17023"
+     id="rect2"
+     style="stroke-width:3.41986" />
+  <rect
+     class="fg"
+     x="17.485928"
+     y="20.802338"
+     width="80"
+     height="80"
+     style="mix-blend-mode:multiply;stroke-width:0.816497"
+     id="rect3" />
+  <!-- screen -->
+  <text
+     x="-246.50481"
+     y="15.589426"
+     id="text3"
+     transform="rotate(-88.59218)">screen</text>
+  <rect
+     class="fg"
+     x="17.485928"
+     y="180.80234"
+     width="80"
+     height="80"
+     style="mix-blend-mode:screen;stroke-width:0.816497"
+     id="rect5" />
+  <!-- darken -->
+  <text
+     x="16.530159"
+     y="438.88876"
+     id="text5"
+     transform="rotate(-0.6864704)">darken</text>
+  <rect
+     class="fg"
+     x="17.485928"
+     y="340.19424"
+     width="80"
+     height="80"
+     style="mix-blend-mode:darken;stroke-width:0.816497"
+     id="rect7" />
+  <!-- lighten -->
+  <text
+     x="192.54984"
+     y="438.24146"
+     id="text7">lighten</text>
+  <rect
+     class="fg"
+     x="184.46466"
+     y="340.19424"
+     width="80"
+     height="80"
+     style="mix-blend-mode:lighten;stroke-width:0.816497"
+     id="rect9" />
+  <!-- color-burn -->
+  <text
+     x="353.40088"
+     y="438.24146"
+     id="text9">color-burn</text>
+  <rect
+     class="fg"
+     x="351.44342"
+     y="340.19424"
+     width="80"
+     height="80"
+     style="mix-blend-mode:color-burn;stroke-width:0.816497"
+     id="rect11" />
+  <!-- color-dodge -->
+  <text
+     x="170.95961"
+     y="-439.64444"
+     id="text11"
+     transform="rotate(90.301299)">color-dodge</text>
+  <rect
+     class="fg"
+     x="351.44342"
+     y="180.80234"
+     width="80"
+     height="80"
+     style="mix-blend-mode:color-dodge;stroke-width:0.816497"
+     id="rect13" />
+  <!-- overlay -->
+  <text
+     x="361.82642"
+     y="12.884766"
+     id="text13">overlay</text>
+  <!-- difference -->
+  <text
+     x="264.79001"
+     y="85.525307"
+     id="text15"
+     transform="rotate(29.414814)">difference</text>
+  <rect
+     class="fg"
+     x="184.46466"
+     y="180.80234"
+     width="80"
+     height="80"
+     style="mix-blend-mode:difference;stroke-width:0.816497"
+     id="rect17" />
+  <!-- exclusion -->
+  <text
+     x="189.57111"
+     y="16.461914"
+     id="text17">exclusion</text>
+  <rect
+     class="fg"
+     x="184.46466"
+     y="20.802338"
+     width="80"
+     height="80"
+     style="mix-blend-mode:exclusion;stroke-width:0.816497"
+     id="rect19" />
+  <rect
+     class="fg"
+     x="351.44342"
+     y="20.802338"
+     width="80"
+     height="80"
+     style="mix-blend-mode:overlay;stroke-width:0.816497"
+     id="rect15" />
+</svg>

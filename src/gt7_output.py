@@ -4584,6 +4584,14 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 return min(c1, c2)
             if mode == "lighten":
                 return max(c1, c2)
+            if mode == "color-burn":
+                if c2 >= 1.0:
+                    return 1.0
+                return 0.0 if c1 <= 0.0 else 1.0 - min(1.0, (1.0 - c2) / c1)
+            if mode == "color-dodge":
+                if c2 <= 0.0:
+                    return 0.0
+                return 1.0 if c1 >= 1.0 else min(1.0, c2 / (1.0 - c1))
             if mode == "overlay":
                 return (2.0 * c1 * c2) if c2 < 0.5 else 1.0 - 2.0 * (1.0 - c1) * (1.0 - c2)
             if mode == "difference":
@@ -4654,16 +4662,22 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         if blend_mode == "normal":
             return
 
+        overlay_gradient, _ = self.ref_target(
+            el_blend_mode,
+            "fill",
+            tag_name={"linearGradient", "radialGradient"},
+        )
         destination_gradient, _ = self.ref_target(
             el_clipped,
             "fill",
             tag_name={"linearGradient", "radialGradient"},
         )
-        if destination_gradient is not None:
-            blended_gradient = self._blend_gradient_stops(
+
+        if overlay_gradient is not None:
+            blended_gradient = self._blend_overlay_gradient_stops(
                 el_blend_mode,
                 el_clipped,
-                destination_gradient,
+                overlay_gradient,
                 blend_mode,
             )
             if blended_gradient is not None:
@@ -4676,16 +4690,11 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 el_clipped.attrib.pop("mix-blend-mode", None)
                 return
 
-        overlay_gradient, _ = self.ref_target(
-            el_blend_mode,
-            "fill",
-            tag_name={"linearGradient", "radialGradient"},
-        )
-        if overlay_gradient is not None:
-            blended_gradient = self._blend_overlay_gradient_stops(
+        if destination_gradient is not None:
+            blended_gradient = self._blend_gradient_stops(
                 el_blend_mode,
                 el_clipped,
-                overlay_gradient,
+                destination_gradient,
                 blend_mode,
             )
             if blended_gradient is not None:
