@@ -530,7 +530,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.log(logging.INFO, f"mesh divisions: {self.options.mesh_divisions}")
             self.log(logging.INFO, f"gradient division: {self.options.gradient_division}")
             self.log(logging.INFO, f"strip alpha: {self.options.strip_alpha}")
-            self.log(logging.INFO, f"blend mode policy: {getattr(self.options, 'blend_mode_policy', 'strip')}")
+            self.log(logging.INFO, f"resolve blend mode: {self.options, 'resolve_blend_mode'}")
             self.log(logging.INFO, f"tracing: {self.options.log_level}")
 
             capture = _stderr_capture.getvalue().strip()
@@ -4277,6 +4277,14 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
 
     def _gradient_average_color(self, grad:BaseElement|None) -> tuple[float, float, float, float]:
+        """Return the arithmetic mean RGBA color of a gradient's stops.
+
+        Args:
+            grad: Gradient to sample, or ``None`` for the opaque-black fallback.
+
+        Returns:
+            Mean red, green, blue, and alpha channels, each normalized to 0–1.
+        """
         if grad is None:
             return (0.0, 0.0, 0.0, 1.0)
 
@@ -4313,6 +4321,15 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return (avg[0], avg[1], avg[2], avg[3])
 
     def _gradient_stops(self, grad:BaseElement) -> list[tuple[float, tuple[float, float, float, float]]]:
+        """Parse and sort gradient stops by offset.
+
+        Args:
+            grad: Gradient whose stops should be read.
+
+        Returns:
+            Sorted ``(offset, rgba)`` pairs, with offsets and channels normalized
+            to 0–1. Stops with invalid offsets or colors are omitted.
+        """
         stops: list[tuple[float, tuple[float, float, float, float]]] = []
 
         for stop in grad.iter():
@@ -4335,6 +4352,14 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return sorted(stops, key=lambda stop: stop[0])
 
     def _stop_rgba(self, stop:BaseElement) -> tuple[float, float, float, float] | None:
+        """Parse a gradient stop into normalized RGBA channels.
+
+        Args:
+            stop: SVG gradient stop element.
+
+        Returns:
+            The stop's normalized RGBA color, or ``None`` for a non-color value.
+        """
         color, alpha = self.parse_color(stop.get("stop-color") or "#000000")
         if color is None:
             return None
@@ -4352,10 +4377,30 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         )
 
     def _gradient_coordinate(self, grad:BaseElement, attr:str, default:float) -> float:
+        """Read a numeric gradient coordinate, using a fallback when absent.
+
+        Args:
+            grad: Gradient element containing the coordinate.
+            attr: Coordinate attribute name.
+            default: Value returned when the attribute is missing.
+
+        Returns:
+            The parsed coordinate value or ``default``.
+        """
         value = grad.get(attr)
         return default if value is None else float(value)
 
     def _sample_gradient(self, grad:BaseElement, x:float, y:float) -> tuple[float, float, float, float]:
+        """Evaluate a linear or radial gradient at a user-space point.
+
+        Args:
+            grad: Gradient to sample.
+            x: User-space x coordinate.
+            y: User-space y coordinate.
+
+        Returns:
+            Normalized RGBA channels for the sampled point.
+        """
         stops = self._gradient_stops(grad)
         if not stops:
             return self._gradient_average_color(grad)
@@ -4417,6 +4462,15 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return stops[-1][1]
 
     def _gradient_stop_point(self, grad:BaseElement, offset:float) -> tuple[float, float]:
+        """Return a representative point for a gradient stop offset.
+
+        Args:
+            grad: Linear or radial gradient defining the coordinate system.
+            offset: Normalized gradient offset.
+
+        Returns:
+            User-space ``(x, y)`` point corresponding to the offset.
+        """
         if self.tag_name(grad).lower() == "lineargradient":
             x1 = self._gradient_coordinate(grad, "x1", 0.0)
             y1 = self._gradient_coordinate(grad, "y1", 0.0)
@@ -4431,6 +4485,16 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return (cx + radius * offset, cy)
 
     def _sample_paint_at(self, el:BaseElement, x:float, y:float) -> tuple[float, float, float, float]:
+        """Sample an element's fill at a user-space point.
+
+        Args:
+            el: Element whose fill should be sampled.
+            x: User-space x coordinate.
+            y: User-space y coordinate.
+
+        Returns:
+            Normalized RGBA channels for the fill at that point.
+        """
         grad, _ = self.ref_target(el, "fill", tag_name={"linearGradient", "radialGradient"})
         if grad is not None:
             return self._sample_gradient(grad, x, y)
@@ -4444,7 +4508,17 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         destination:BaseElement,
         mode:str
     ) -> LinearGradient | RadialGradient | None:
-        """Clone a backdrop gradient and blend each stop at its sample point."""
+        """Clone a backdrop gradient and blend the overlay into its stops.
+
+        Args:
+            source: Overlay element supplying the blend paint.
+            clipped: Clipped overlap geometry used to resolve gradient bounds.
+            destination: Backdrop gradient to clone.
+            mode: Blend-mode name.
+
+        Returns:
+            A blended linear or radial gradient, or ``None`` if unsupported.
+        """
         if self.tag_name(destination).lower() not in {"lineargradient", "radialgradient"}:
             return None
 
@@ -4499,7 +4573,17 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         source_gradient:BaseElement,
         mode:str
     ) -> LinearGradient | RadialGradient | None:
-        """Keep an overlay gradient and blend its stops against the backdrop."""
+        """Clone an overlay gradient and blend its stops against the backdrop.
+
+        Args:
+            source: Overlay element supplying the paint and gradient bounds.
+            clipped: Clipped overlap geometry whose fill is the backdrop.
+            source_gradient: Linear or radial gradient used by the overlay.
+            mode: Blend-mode name.
+
+        Returns:
+            A blended clone of the overlay gradient, or ``None`` if unsupported.
+        """
         gradient = self.clone_gradient(source_gradient)
         if not isinstance(gradient, (LinearGradient, RadialGradient)):
             return None
@@ -4545,6 +4629,16 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
 
     def _paint_to_rgba(self, el:BaseElement, attr:str="fill", default:tuple[float, float, float, float]=(0.0, 0.0, 0.0, 1.0)) -> tuple[float, float, float, float]:
+        """Convert a solid fill or supported gradient reference to RGBA.
+
+        Args:
+            el: Element providing the paint attribute.
+            attr: Paint attribute name, normally ``"fill"``.
+            default: Normalized RGBA fallback for missing or unsupported paint.
+
+        Returns:
+            Normalized RGBA channels for the paint.
+        """
         value = el.get(attr)
         if value is None or value.lower() == "none":
             return default
@@ -4570,6 +4664,16 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         
 
     def _blend_rgba(self, src:tuple[float, float, float, float], dst:tuple[float, float, float, float], mode:str) -> tuple[float, float, float, float]:
+        """Blend normalized source and backdrop RGBA colors.
+
+        Args:
+            src: Normalized RGBA color of the overlay.
+            dst: Normalized RGBA color of the backdrop.
+            mode: Blend-mode name.
+
+        Returns:
+            The blended normalized RGBA color.
+        """
         mode = (mode or "normal").lower()
 
         def clamp(v):
@@ -4711,7 +4815,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         if el_blend_mode is el_clipped:
             dst_rgba = (1.0, 1.0, 1.0, 1.0)
         else:
-            dst_rgba = self._paint_to_rgba(el_clipped, "fill", default=(1.0, 1.0, 1.0, 1.0))
+            dst_rgba = self._paint_to_rgba(el_clipped, "fill", default=(0.0, 0.0, 0.0, 1.0))
 
         result = self._blend_rgba(src_rgba, dst_rgba, blend_mode)
         color = self.rgba_to_hex(result[0] * 255.0, result[1] * 255.0, result[2] * 255.0)
