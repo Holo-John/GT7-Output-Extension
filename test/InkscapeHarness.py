@@ -48,6 +48,7 @@ def run_extension_on_svg(extension_class, svg_path, artifact_dir, params):
     compress_output = params.get("compress_output", DEFAULT_PARAMS["compress_output"])
     log_level = params.get("log_level", DEFAULT_PARAMS["log_level"])
     gradient_division = params.get("gradient_division", DEFAULT_PARAMS["gradient_division"])
+    resolve_blend_mode = params.get("resolve_blend_mode", DEFAULT_PARAMS["resolve_blend_mode"])
 
     # 1. Load SVG
     doc = inkex.load_svg(svg_path)
@@ -65,7 +66,8 @@ def run_extension_on_svg(extension_class, svg_path, artifact_dir, params):
         "--mesh_divisions", f"{mesh_divisions}",
         "--compress_output", f"{compress_output}",
         "--log_level", f"{log_level}",
-        "--gradient_division", f"{gradient_division}"
+        "--gradient_division", f"{gradient_division}",
+        "--resolve_blend_mode", f"{resolve_blend_mode}"
     ]
     ext.parse_arguments(test_args)
 
@@ -234,7 +236,8 @@ DEFAULT_PARAMS = {
     "rounding_precision": 3, 
     "mesh_divisions": 4,
     "log_level": "DEBUG",
-    "gradient_division": True
+    "gradient_division": True,
+    "resolve_blend_mode": True
 }
 
 def resolve_threshold(svg_path: pathlib.Path, thresholds: dict[str, float]) -> float:

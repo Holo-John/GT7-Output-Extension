@@ -27,13 +27,15 @@
     <filetypetooltip>SVG export optimized for Gran Turismo 7 Livery Editor</filetypetooltip>
   </output>
 
-  <param name="strip_alpha" type="boolean" gui-text="Strip alpha from gradients">true</param>
-
   <param name="rounding_precision" type="int" gui-text="Coordinate rounding (decimal places))">3</param>
 
   <param name="mesh_divisions" type="int" gui-text="Gradient mesh subdivision count" min="2">2</param>
 
+  <param name="strip_alpha" type="boolean" gui-text="Strip alpha from gradients">true</param>
+
   <param name="gradient_division" type="boolean" gui-text="Split shapes to approximate multi-stop linear and radial gradients">false</param>
+
+  <param name="resolve_blend_mode" type="boolean" gui-text="Resolve blend modes into geometry">false</param>
 
   <param name="compress_output" type="boolean" gui-text="Compress exported GT7 file">false</param>
 

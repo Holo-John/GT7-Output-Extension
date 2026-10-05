@@ -134,7 +134,6 @@ class ReferenceCount(NamedTuple):
     patterns: int
     markers: int
     paint_orders: int
-    blend_modes: int
 
 #end region
 class GT7Output(inkex.OutputExtension):
@@ -283,6 +282,7 @@ class GT7Output(inkex.OutputExtension):
         "opacity", "clip-path", "mask", "filter", "fill-rule",
         "stop-color", "stop-opacity", "paint-order",
         "marker-start", "marker-mid", "marker-end",
+        "mix-blend-mode",
     }
 
 
@@ -458,7 +458,8 @@ class GT7Output(inkex.OutputExtension):
         pars.add_argument("--compress_output", type=inkex.Boolean, default=False) # type: ignore
         pars.add_argument("--log_level", type=str, default=False) # type: ignore
         pars.add_argument("--gradient_division", type=inkex.Boolean, default=False) # type: ignore
-        
+        pars.add_argument("--resolve_blend_mode", type=inkex.Boolean, default=False) # type: ignore
+
     def effect(self):
         """
         Defined by the Inkscape extension API but unused for output extensions.
@@ -529,6 +530,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.log(logging.INFO, f"mesh divisions: {self.options.mesh_divisions}")
             self.log(logging.INFO, f"gradient division: {self.options.gradient_division}")
             self.log(logging.INFO, f"strip alpha: {self.options.strip_alpha}")
+            self.log(logging.INFO, f"blend mode policy: {getattr(self.options, 'blend_mode_policy', 'strip')}")
             self.log(logging.INFO, f"tracing: {self.options.log_level}")
 
             capture = _stderr_capture.getvalue().strip()
@@ -554,6 +556,9 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
             self.flatten_svg_dom()
             self.log_svg(header="AFTER flatten_svg_dom()")
+
+            self.resolve_rendering_modes(self.svg)
+            self.log_svg(header="AFTER resolve_rendering_modes()")
             
             self.translate_viewbox()
             self.log_svg(header="AFTER translate_viewbox()")
@@ -3996,7 +4001,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         pattern_count = 0
         marker_count = 0
         paint_order_count = 0
-        blend_mode_count = 0
 
         if node is None:
             node = self.svg
@@ -4018,7 +4022,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             pattern_count += counts.patterns
             marker_count += counts.markers
             paint_order_count += counts.paint_orders
-            blend_mode_count += counts.blend_modes
 
         # Process node itself after children have been processed
 
@@ -4030,7 +4033,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 clip_count += self.resolve_clippath_for_group(node)
                 grad_count += self.resolve_gradient_for_group(node)
                 pattern_count += self.resolve_pattern_for_group(node)
-                blend_mode_count += self.remove_mix_blend_mode_element(node)
 
             case "path" | "rect" | "circle" | "ellipse" | "line" | "polyline" | "polygon":
                 clip_count += self.resolve_clippath_for_shape(node)
@@ -4039,7 +4041,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
                 pattern_count += self.resolve_pattern_for_shape(node)
                 filter_count += self.remove_filter_for_element(node)
                 mask_count += self.remove_mask_for_element(node)
-                blend_mode_count += self.remove_mix_blend_mode_element(node)
                 
             case "clippath":
                 pass
@@ -4062,9 +4063,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             if mask_count:
                 self.log(logging.INFO, f"Removed {mask_count} masks")
 
-            if blend_mode_count:
-                self.log(logging.INFO, f"Removed {blend_mode_count} blend mode attributes")
-
             if pattern_count:
                 self.log(logging.INFO, f"Resolved {pattern_count} patterns")
             
@@ -4076,16 +4074,200 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         
         return ReferenceCount(
-        grad_count,
+            grad_count,
             clip_count,
             filter_count,
             mask_count,
             pattern_count,
             marker_count,
-            paint_order_count,
-            blend_mode_count
+            paint_order_count
         )
+
+
+    def resolve_rendering_modes(self, el:BaseElement | None) -> int:
+        """
+        Resolve selected rendering-mode effects, such as `mix-blend-mode`, on a
+        flattened SVG tree. The implementation intentionally keeps this pass
+        deliberately conservative: it only attempts to resolve the supported
+        cases without rasterizing, and is therefore safe for GT7 export.
+        """
+
+        changed = 0
+
+        if el is None:
+            el = self.svg
+
+        for child in list(el):
+            if self.resolve_mix_blend_mode(child):
+                changed += 1
+
+        return changed
+
+
+    def _gradient_average_color(self, grad:BaseElement|None) -> tuple[float, float, float, float]:
+        if grad is None:
+            return (0.0, 0.0, 0.0, 1.0)
+
+        colors: list[tuple[float, float, float, float]] = []
+        for stop in grad.iter():
+            if self.tag_name(stop) != "stop":
+                continue
+
+            raw_color = stop.get("stop-color", "#000000")
+            opacity = stop.get("stop-opacity", "1")
+            try:
+                opacity_value = float(opacity)
+            except ValueError:
+                opacity_value = 1.0
+
+            color, alpha = self.parse_color(raw_color)
+            if color is None:
+                continue
+
+            rgb = color[1:]
+            r = int(rgb[0:2], 16) / 255.0
+            g = int(rgb[2:4], 16) / 255.0
+            b = int(rgb[4:6], 16) / 255.0
+            a = min(1.0, max(0.0, (alpha / 255.0) * opacity_value))
+            colors.append((r, g, b, a))
+
+        if not colors:
+            return (0.0, 0.0, 0.0, 1.0)
+
+        avg = [
+            sum(color[i] for color in colors) / len(colors)
+            for i in range(4)
+        ]
+        return (avg[0], avg[1], avg[2], avg[3])
+
+
+    def _paint_to_rgba(self, el:BaseElement, attr:str="fill", default:tuple[float, float, float, float]=(0.0, 0.0, 0.0, 1.0)) -> tuple[float, float, float, float]:
+        value = el.get(attr)
+        if value is None or value.lower() == "none":
+            return default
+
+        if value.startswith("url("):
+            ref, _ = self.ref_target(el, attr, tag_name={"linearGradient", "radialGradient"})
+            if ref is not None:
+                return self._gradient_average_color(ref)
+            return default
+
+        color, alpha = self.parse_color(value)
+        if color is None:
+            return default
+
+        try:
+            r = int(color[1:3], 16) / 255.0
+            g = int(color[3:5], 16) / 255.0
+            b = int(color[5:7], 16) / 255.0
+            a = min(1.0, max(0.0, alpha / 255.0))
+            return (r, g, b, a)
+        except ValueError:
+            return default
+
+    def _blend_rgba(self, src:tuple[float, float, float, float], dst:tuple[float, float, float, float], mode:str) -> tuple[float, float, float, float]:
+        mode = (mode or "normal").lower()
+
+        def clamp(v):
+            return max(0.0, min(1.0, v))
+
+        def blend_channel(c1: float, c2: float) -> float:
+            if mode == "multiply":
+                return c1 * c2
+            if mode == "screen":
+                return 1.0 - (1.0 - c1) * (1.0 - c2)
+            if mode == "darken":
+                return min(c1, c2)
+            if mode == "lighten":
+                return max(c1, c2)
+            if mode == "overlay":
+                return (2.0 * c1 * c2) if c2 < 0.5 else 1.0 - 2.0 * (1.0 - c1) * (1.0 - c2)
+            if mode == "difference":
+                return abs(c1 - c2)
+            if mode == "exclusion":
+                return c1 + c2 - (2.0 * c1 * c2)
+            return c1
+
+        out = tuple(
+            clamp(blend_channel(src[i], dst[i]))
+            for i in range(3)
+        )
+        alpha = clamp(src[3] * dst[3])
+        return (out[0], out[1], out[2], alpha)
+
+
+    def resolve_mix_blend_mode(self, el:BaseElement) -> bool:
+        """
+        Apply the selected blend-mode policy to a geometry node. In resolve mode,
+        intersect the shape with lower geometry and add geometry-only blended
+        approximations above it. If there is no lower geometry, retain the source
+        paint unchanged because the SVG backdrop is transparent.
+        """
+        if not self.is_geometry(el):
+            return False
+
+        blend_mode = (el.get("mix-blend-mode", "normal") or "normal").lower()
+        if blend_mode == "normal":
+            return False
+
+        if not self.options.resolve_blend_mode:
+            self.log(logging.WARNING, f"Stripping blend mode from <{self.node_str(el)}>")
+        
+            el.attrib.pop("mix-blend-mode", None)
+            return True
     
+        parent = el.getparent()
+        if parent is None:
+            return False
+
+        index = parent.index(el)
+        below = [node for node in list(parent)[:index] if self.is_geometry(node)]
+        if not below:
+            # With no painted geometry below, the backdrop is transparent and
+            # the source paint is unchanged by a blend mode.
+            el.attrib.pop("mix-blend-mode", None)
+            return True
+
+        clipped = self.path_intersection(el, below)
+        insert_index = index + 1
+        for clip in clipped:
+            self.resolve_mix_blend_mode_color(el, clip)
+            self.add_node(clip, parent, insert_index)
+            insert_index += 1
+
+        el.attrib.pop("mix-blend-mode", None)
+        return True
+
+
+    def resolve_mix_blend_mode_color(self, el_blend_mode:BaseElement, el_clipped:BaseElement) -> None:
+        """
+        Approximate the blended fill color for the clipping result by evaluating
+        the blend mode against a source paint and a destination paint. This is a
+        conservative geometry-only approximation that works with the project's
+        simplified gradient model.
+        """
+        blend_mode = (el_blend_mode.get("mix-blend-mode", "normal") or "normal").lower()
+        if blend_mode == "normal":
+            return
+
+        src_rgba = self._paint_to_rgba(el_blend_mode, "fill")
+        if el_blend_mode is el_clipped:
+            dst_rgba = (1.0, 1.0, 1.0, 1.0)
+        else:
+            dst_rgba = self._paint_to_rgba(el_clipped, "fill", default=(1.0, 1.0, 1.0, 1.0))
+
+        result = self._blend_rgba(src_rgba, dst_rgba, blend_mode)
+        color = self.rgba_to_hex(result[0] * 255.0, result[1] * 255.0, result[2] * 255.0)
+
+        el_clipped.set("fill", color)
+        el_clipped.set("stroke", "none")
+        if self.options.strip_alpha or result[3] >= 1.0:
+            el_clipped.attrib.pop("fill-opacity", None)
+        else:
+            el_clipped.set("fill-opacity", str(result[3]))
+        el_clipped.attrib.pop("stroke-opacity", None)    
+        el_clipped.attrib.pop("mix-blend-mode", None)
+ 
 
     def flatten_svg_dom(self, node:BaseElement|None=None, parent_transform:Transform|None=None) -> int:
         """
