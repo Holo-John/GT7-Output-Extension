@@ -4084,191 +4084,6 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         )
 
 
-    def resolve_rendering_modes(self, el:BaseElement | None) -> int:
-        """
-        Resolve selected rendering-mode effects, such as `mix-blend-mode`, on a
-        flattened SVG tree. The implementation intentionally keeps this pass
-        deliberately conservative: it only attempts to resolve the supported
-        cases without rasterizing, and is therefore safe for GT7 export.
-        """
-
-        changed = 0
-
-        if el is None:
-            el = self.svg
-
-        for child in list(el):
-            if self.resolve_mix_blend_mode(child):
-                changed += 1
-
-        return changed
-
-
-    def _gradient_average_color(self, grad:BaseElement|None) -> tuple[float, float, float, float]:
-        if grad is None:
-            return (0.0, 0.0, 0.0, 1.0)
-
-        colors: list[tuple[float, float, float, float]] = []
-        for stop in grad.iter():
-            if self.tag_name(stop) != "stop":
-                continue
-
-            raw_color = stop.get("stop-color", "#000000")
-            opacity = stop.get("stop-opacity", "1")
-            try:
-                opacity_value = float(opacity)
-            except ValueError:
-                opacity_value = 1.0
-
-            color, alpha = self.parse_color(raw_color)
-            if color is None:
-                continue
-
-            rgb = color[1:]
-            r = int(rgb[0:2], 16) / 255.0
-            g = int(rgb[2:4], 16) / 255.0
-            b = int(rgb[4:6], 16) / 255.0
-            a = min(1.0, max(0.0, (alpha / 255.0) * opacity_value))
-            colors.append((r, g, b, a))
-
-        if not colors:
-            return (0.0, 0.0, 0.0, 1.0)
-
-        avg = [
-            sum(color[i] for color in colors) / len(colors)
-            for i in range(4)
-        ]
-        return (avg[0], avg[1], avg[2], avg[3])
-
-
-    def _paint_to_rgba(self, el:BaseElement, attr:str="fill", default:tuple[float, float, float, float]=(0.0, 0.0, 0.0, 1.0)) -> tuple[float, float, float, float]:
-        value = el.get(attr)
-        if value is None or value.lower() == "none":
-            return default
-
-        if value.startswith("url("):
-            ref, _ = self.ref_target(el, attr, tag_name={"linearGradient", "radialGradient"})
-            if ref is not None:
-                return self._gradient_average_color(ref)
-            return default
-
-        color, alpha = self.parse_color(value)
-        if color is None:
-            return default
-
-        try:
-            r = int(color[1:3], 16) / 255.0
-            g = int(color[3:5], 16) / 255.0
-            b = int(color[5:7], 16) / 255.0
-            a = min(1.0, max(0.0, alpha / 255.0))
-            return (r, g, b, a)
-        except ValueError:
-            return default
-
-    def _blend_rgba(self, src:tuple[float, float, float, float], dst:tuple[float, float, float, float], mode:str) -> tuple[float, float, float, float]:
-        mode = (mode or "normal").lower()
-
-        def clamp(v):
-            return max(0.0, min(1.0, v))
-
-        def blend_channel(c1: float, c2: float) -> float:
-            if mode == "multiply":
-                return c1 * c2
-            if mode == "screen":
-                return 1.0 - (1.0 - c1) * (1.0 - c2)
-            if mode == "darken":
-                return min(c1, c2)
-            if mode == "lighten":
-                return max(c1, c2)
-            if mode == "overlay":
-                return (2.0 * c1 * c2) if c2 < 0.5 else 1.0 - 2.0 * (1.0 - c1) * (1.0 - c2)
-            if mode == "difference":
-                return abs(c1 - c2)
-            if mode == "exclusion":
-                return c1 + c2 - (2.0 * c1 * c2)
-            return c1
-
-        out = tuple(
-            clamp(blend_channel(src[i], dst[i]))
-            for i in range(3)
-        )
-        alpha = clamp(src[3] * dst[3])
-        return (out[0], out[1], out[2], alpha)
-
-
-    def resolve_mix_blend_mode(self, el:BaseElement) -> bool:
-        """
-        Apply the selected blend-mode policy to a geometry node. In resolve mode,
-        intersect the shape with lower geometry and add geometry-only blended
-        approximations above it. If there is no lower geometry, retain the source
-        paint unchanged because the SVG backdrop is transparent.
-        """
-        if not self.is_geometry(el):
-            return False
-
-        blend_mode = (el.get("mix-blend-mode", "normal") or "normal").lower()
-        if blend_mode == "normal":
-            return False
-
-        if not self.options.resolve_blend_mode:
-            self.log(logging.WARNING, f"Stripping blend mode from <{self.node_str(el)}>")
-        
-            el.attrib.pop("mix-blend-mode", None)
-            return True
-    
-        parent = el.getparent()
-        if parent is None:
-            return False
-
-        index = parent.index(el)
-        below = [node for node in list(parent)[:index] if self.is_geometry(node)]
-        if not below:
-            # With no painted geometry below, the backdrop is transparent and
-            # the source paint is unchanged by a blend mode.
-            el.attrib.pop("mix-blend-mode", None)
-            return True
-
-        clipped = self.path_intersection(el, below)
-        insert_index = index + 1
-        for clip in clipped:
-            self.resolve_mix_blend_mode_color(el, clip)
-            self.add_node(clip, parent, insert_index)
-            insert_index += 1
-
-        el.attrib.pop("mix-blend-mode", None)
-        return True
-
-
-    def resolve_mix_blend_mode_color(self, el_blend_mode:BaseElement, el_clipped:BaseElement) -> None:
-        """
-        Approximate the blended fill color for the clipping result by evaluating
-        the blend mode against a source paint and a destination paint. This is a
-        conservative geometry-only approximation that works with the project's
-        simplified gradient model.
-        """
-        blend_mode = (el_blend_mode.get("mix-blend-mode", "normal") or "normal").lower()
-        if blend_mode == "normal":
-            return
-
-        src_rgba = self._paint_to_rgba(el_blend_mode, "fill")
-        if el_blend_mode is el_clipped:
-            dst_rgba = (1.0, 1.0, 1.0, 1.0)
-        else:
-            dst_rgba = self._paint_to_rgba(el_clipped, "fill", default=(1.0, 1.0, 1.0, 1.0))
-
-        result = self._blend_rgba(src_rgba, dst_rgba, blend_mode)
-        color = self.rgba_to_hex(result[0] * 255.0, result[1] * 255.0, result[2] * 255.0)
-
-        el_clipped.set("fill", color)
-        el_clipped.set("stroke", "none")
-        if self.options.strip_alpha or result[3] >= 1.0:
-            el_clipped.attrib.pop("fill-opacity", None)
-        else:
-            el_clipped.set("fill-opacity", str(result[3]))
-        el_clipped.attrib.pop("stroke-opacity", None)    
-        el_clipped.attrib.pop("mix-blend-mode", None)
- 
-
     def flatten_svg_dom(self, node:BaseElement|None=None, parent_transform:Transform|None=None) -> int:
         """
         Flatten all transforms in the SVG DOM by pushing cumulative transforms
@@ -4387,7 +4202,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         -------
         int
             Number of geometry nodes whose transforms were flattened.
-"""
+        """
 
         if node is None:
             node = self.svg
@@ -4438,7 +4253,470 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return transform_count
 
     # endregion
-            
+
+    # region --- Rendering Modes ---
+
+    def resolve_rendering_modes(self, el:BaseElement | None) -> int:
+        """
+        Resolve selected rendering-mode effects, such as `mix-blend-mode`, on a
+        flattened SVG tree. The implementation intentionally keeps this pass
+        deliberately conservative: it only attempts to resolve the supported
+        cases without rasterizing, and is therefore safe for GT7 export.
+        """
+
+        changed = 0
+
+        if el is None:
+            el = self.svg
+
+        for child in list(el):
+            if self.resolve_mix_blend_mode(child):
+                changed += 1
+
+        return changed
+
+
+    def _gradient_average_color(self, grad:BaseElement|None) -> tuple[float, float, float, float]:
+        if grad is None:
+            return (0.0, 0.0, 0.0, 1.0)
+
+        colors: list[tuple[float, float, float, float]] = []
+        for stop in grad.iter():
+            if self.tag_name(stop) != "stop":
+                continue
+
+            raw_color = stop.get("stop-color", "#000000")
+            opacity = stop.get("stop-opacity", "1")
+            try:
+                opacity_value = float(opacity)
+            except ValueError:
+                opacity_value = 1.0
+
+            color, alpha = self.parse_color(raw_color)
+            if color is None:
+                continue
+
+            rgb = color[1:]
+            r = int(rgb[0:2], 16) / 255.0
+            g = int(rgb[2:4], 16) / 255.0
+            b = int(rgb[4:6], 16) / 255.0
+            a = min(1.0, max(0.0, (alpha / 255.0) * opacity_value))
+            colors.append((r, g, b, a))
+
+        if not colors:
+            return (0.0, 0.0, 0.0, 1.0)
+
+        avg = [
+            sum(color[i] for color in colors) / len(colors)
+            for i in range(4)
+        ]
+        return (avg[0], avg[1], avg[2], avg[3])
+
+    def _gradient_stops(self, grad:BaseElement) -> list[tuple[float, tuple[float, float, float, float]]]:
+        stops: list[tuple[float, tuple[float, float, float, float]]] = []
+
+        for stop in grad.iter():
+            if self.tag_name(stop) != "stop":
+                continue
+
+            raw_offset = stop.get("offset", "0").strip()
+            try:
+                offset = float(raw_offset.rstrip("%"))
+                if raw_offset.endswith("%"):
+                    offset /= 100.0
+            except ValueError:
+                self.log(logging.WARNING, f"Invalid gradient stop offset {raw_offset!r}")
+                continue
+
+            rgba = self._stop_rgba(stop)
+            if rgba is not None:
+                stops.append((min(1.0, max(0.0, offset)), rgba))
+
+        return sorted(stops, key=lambda stop: stop[0])
+
+    def _stop_rgba(self, stop:BaseElement) -> tuple[float, float, float, float] | None:
+        color, alpha = self.parse_color(stop.get("stop-color") or "#000000")
+        if color is None:
+            return None
+
+        try:
+            opacity = float(stop.get("stop-opacity") or "1")
+        except ValueError:
+            opacity = 1.0
+
+        return (
+            int(color[1:3], 16) / 255.0,
+            int(color[3:5], 16) / 255.0,
+            int(color[5:7], 16) / 255.0,
+            min(1.0, max(0.0, (alpha / 255.0) * opacity)),
+        )
+
+    def _gradient_coordinate(self, grad:BaseElement, attr:str, default:float) -> float:
+        value = grad.get(attr)
+        return default if value is None else float(value)
+
+    def _sample_gradient(self, grad:BaseElement, x:float, y:float) -> tuple[float, float, float, float]:
+        stops = self._gradient_stops(grad)
+        if not stops:
+            return self._gradient_average_color(grad)
+
+        tag = self.tag_name(grad).lower()
+        if tag == "lineargradient":
+            x1 = self._gradient_coordinate(grad, "x1", 0.0)
+            y1 = self._gradient_coordinate(grad, "y1", 0.0)
+            x2 = self._gradient_coordinate(grad, "x2", 1.0)
+            y2 = self._gradient_coordinate(grad, "y2", 0.0)
+            dx, dy = x2 - x1, y2 - y1
+            length_squared = dx * dx + dy * dy
+            t = 0.0 if length_squared == 0 else ((x - x1) * dx + (y - y1) * dy) / length_squared
+        elif tag == "radialgradient":
+            cx = self._gradient_coordinate(grad, "cx", 0.0)
+            cy = self._gradient_coordinate(grad, "cy", 0.0)
+            fx = self._gradient_coordinate(grad, "fx", cx)
+            fy = self._gradient_coordinate(grad, "fy", cy)
+            radius = self._gradient_coordinate(grad, "r", 0.0)
+            dx, dy = x - fx, y - fy
+            a = dx * dx + dy * dy
+            if a == 0 or radius == 0:
+                t = 0.0
+            else:
+                ox, oy = fx - cx, fy - cy
+                b = 2.0 * (ox * dx + oy * dy)
+                c = ox * ox + oy * oy - radius * radius
+                discriminant = max(0.0, b * b - 4.0 * a * c)
+                boundary = (-b + math.sqrt(discriminant)) / (2.0 * a)
+                t = 1.0 if boundary <= 0 else 1.0 / boundary
+        else:
+            return self._gradient_average_color(grad)
+
+        spread = grad.get("spreadMethod", "pad")
+        if spread == "repeat":
+            t %= 1.0
+        elif spread == "reflect":
+            t %= 2.0
+            if t > 1.0:
+                t = 2.0 - t
+        else:
+            t = min(1.0, max(0.0, t))
+
+        if t <= stops[0][0]:
+            return stops[0][1]
+
+        for (left_offset, left), (right_offset, right) in zip(stops, stops[1:]):
+            if t <= right_offset:
+                if right_offset == left_offset:
+                    return right
+                ratio = (t - left_offset) / (right_offset - left_offset)
+                return (
+                    left[0] + ratio * (right[0] - left[0]),
+                    left[1] + ratio * (right[1] - left[1]),
+                    left[2] + ratio * (right[2] - left[2]),
+                    left[3] + ratio * (right[3] - left[3]),
+                )
+
+        return stops[-1][1]
+
+    def _gradient_stop_point(self, grad:BaseElement, offset:float) -> tuple[float, float]:
+        if self.tag_name(grad).lower() == "lineargradient":
+            x1 = self._gradient_coordinate(grad, "x1", 0.0)
+            y1 = self._gradient_coordinate(grad, "y1", 0.0)
+            x2 = self._gradient_coordinate(grad, "x2", 1.0)
+            y2 = self._gradient_coordinate(grad, "y2", 0.0)
+            return (x1 + (x2 - x1) * offset, y1 + (y2 - y1) * offset)
+
+        cx = self._gradient_coordinate(grad, "cx", 0.0)
+        cy = self._gradient_coordinate(grad, "cy", 0.0)
+        radius = self._gradient_coordinate(grad, "r", 0.0)
+        # A radial stop has no unique sample point; use the positive x radius.
+        return (cx + radius * offset, cy)
+
+    def _sample_paint_at(self, el:BaseElement, x:float, y:float) -> tuple[float, float, float, float]:
+        grad, _ = self.ref_target(el, "fill", tag_name={"linearGradient", "radialGradient"})
+        if grad is not None:
+            return self._sample_gradient(grad, x, y)
+        return self._paint_to_rgba(el, "fill")
+
+
+    def _blend_gradient_stops(
+        self,
+        source:BaseElement,
+        clipped:BaseElement,
+        destination:BaseElement,
+        mode:str
+    ) -> LinearGradient | RadialGradient | None:
+        """Clone a backdrop gradient and blend each stop at its sample point."""
+        if self.tag_name(destination).lower() not in {"lineargradient", "radialgradient"}:
+            return None
+
+        gradient = self.clone_gradient(destination)
+        if not isinstance(gradient, (LinearGradient, RadialGradient)):
+            return None
+
+        bbox = self.shape_bbox(clipped)
+        if bbox is not None:
+            self.apply_gradient_default_coords(gradient, bbox)
+
+        if gradient.get("gradientUnits") != "userSpaceOnUse":
+            self.normalize_gradient_units(gradient, clipped)
+
+        cloned_stops = [stop for stop in gradient if self.tag_name(stop) == "stop"]
+        original_stops = [stop for stop in destination if self.tag_name(stop) == "stop"]
+        if not cloned_stops or len(cloned_stops) != len(original_stops):
+            return None
+
+        for original_stop, cloned_stop in zip(original_stops, cloned_stops):
+            raw_offset = original_stop.get("offset", "0").strip()
+            try:
+                offset = float(raw_offset.rstrip("%"))
+                if raw_offset.endswith("%"):
+                    offset /= 100.0
+            except ValueError:
+                self.log(logging.WARNING, f"Invalid gradient stop offset {raw_offset!r}")
+                continue
+
+            point = self._gradient_stop_point(gradient, min(1.0, max(0.0, offset)))
+            source_rgba = self._sample_paint_at(source, point[0], point[1])
+            original_rgba = self._stop_rgba(original_stop)
+            if original_rgba is None:
+                continue
+
+            result = self._blend_rgba(source_rgba, original_rgba, mode)
+            cloned_stop.set(
+                "stop-color",
+                self.rgba_to_hex(result[0] * 255.0, result[1] * 255.0, result[2] * 255.0),
+            )
+            if self.options.strip_alpha or result[3] >= 1.0:
+                cloned_stop.attrib.pop("stop-opacity", None)
+            else:
+                cloned_stop.set("stop-opacity", str(result[3]))
+
+        return gradient
+
+    def _blend_overlay_gradient_stops(
+        self,
+        source:BaseElement,
+        clipped:BaseElement,
+        source_gradient:BaseElement,
+        mode:str
+    ) -> LinearGradient | RadialGradient | None:
+        """Keep an overlay gradient and blend its stops against the backdrop."""
+        gradient = self.clone_gradient(source_gradient)
+        if not isinstance(gradient, (LinearGradient, RadialGradient)):
+            return None
+
+        bbox = self.shape_bbox(source)
+        if bbox is not None:
+            self.apply_gradient_default_coords(gradient, bbox)
+
+        if gradient.get("gradientUnits") != "userSpaceOnUse":
+            self.normalize_gradient_units(gradient, source)
+
+        stops = [stop for stop in gradient if self.tag_name(stop) == "stop"]
+        if not stops:
+            return None
+
+        for stop in stops:
+            raw_offset = stop.get("offset", "0").strip()
+            try:
+                offset = float(raw_offset.rstrip("%"))
+                if raw_offset.endswith("%"):
+                    offset /= 100.0
+            except ValueError:
+                self.log(logging.WARNING, f"Invalid gradient stop offset {raw_offset!r}")
+                continue
+
+            overlay_rgba = self._stop_rgba(stop)
+            if overlay_rgba is None:
+                continue
+
+            point = self._gradient_stop_point(gradient, min(1.0, max(0.0, offset)))
+            backdrop_rgba = self._sample_paint_at(clipped, point[0], point[1])
+            result = self._blend_rgba(overlay_rgba, backdrop_rgba, mode)
+            stop.set(
+                "stop-color",
+                self.rgba_to_hex(result[0] * 255.0, result[1] * 255.0, result[2] * 255.0),
+            )
+            if self.options.strip_alpha or result[3] >= 1.0:
+                stop.attrib.pop("stop-opacity", None)
+            else:
+                stop.set("stop-opacity", str(result[3]))
+
+        return gradient
+
+
+    def _paint_to_rgba(self, el:BaseElement, attr:str="fill", default:tuple[float, float, float, float]=(0.0, 0.0, 0.0, 1.0)) -> tuple[float, float, float, float]:
+        value = el.get(attr)
+        if value is None or value.lower() == "none":
+            return default
+
+        if value.startswith("url("):
+            ref, _ = self.ref_target(el, attr, tag_name={"linearGradient", "radialGradient"})
+            if ref is not None:
+                return self._gradient_average_color(ref)
+            return default
+
+        color, alpha = self.parse_color(value)
+        if color is None:
+            return default
+
+        try:
+            r = int(color[1:3], 16) / 255.0
+            g = int(color[3:5], 16) / 255.0
+            b = int(color[5:7], 16) / 255.0
+            a = min(1.0, max(0.0, alpha / 255.0))
+            return (r, g, b, a)
+        except ValueError:
+            return default
+        
+
+    def _blend_rgba(self, src:tuple[float, float, float, float], dst:tuple[float, float, float, float], mode:str) -> tuple[float, float, float, float]:
+        mode = (mode or "normal").lower()
+
+        def clamp(v):
+            return max(0.0, min(1.0, v))
+
+        def blend_channel(c1: float, c2: float) -> float:
+            if mode == "multiply":
+                return c1 * c2
+            if mode == "screen":
+                return 1.0 - (1.0 - c1) * (1.0 - c2)
+            if mode == "darken":
+                return min(c1, c2)
+            if mode == "lighten":
+                return max(c1, c2)
+            if mode == "overlay":
+                return (2.0 * c1 * c2) if c2 < 0.5 else 1.0 - 2.0 * (1.0 - c1) * (1.0 - c2)
+            if mode == "difference":
+                return abs(c1 - c2)
+            if mode == "exclusion":
+                return c1 + c2 - (2.0 * c1 * c2)
+            return c1
+
+        out = tuple(
+            clamp(blend_channel(src[i], dst[i]))
+            for i in range(3)
+        )
+        alpha = clamp(src[3] * dst[3])
+        return (out[0], out[1], out[2], alpha)
+
+
+    def resolve_mix_blend_mode(self, el:BaseElement) -> bool:
+        """
+        Apply the selected blend-mode policy to a geometry node. In resolve mode,
+        intersect the shape with lower geometry and add geometry-only blended
+        approximations above it. If there is no lower geometry, retain the source
+        paint unchanged because the SVG backdrop is transparent.
+        """
+        if not self.is_geometry(el):
+            return False
+
+        blend_mode = (el.get("mix-blend-mode", "normal") or "normal").lower()
+        if blend_mode == "normal":
+            return False
+
+        if not self.options.resolve_blend_mode:
+            self.log(logging.WARNING, f"Stripping blend mode from <{self.node_str(el)}>")
+        
+            el.attrib.pop("mix-blend-mode", None)
+            return True
+    
+        parent = el.getparent()
+        if parent is None:
+            return False
+
+        index = parent.index(el)
+        below = [node for node in list(parent)[:index] if self.is_geometry(node)]
+        if not below:
+            # With no painted geometry below, the backdrop is transparent and
+            # the source paint is unchanged by a blend mode.
+            el.attrib.pop("mix-blend-mode", None)
+            return True
+
+        clipped = self.path_intersection(el, below)
+        insert_index = index + 1
+        for clip in clipped:
+            self.resolve_mix_blend_mode_color(el, clip)
+            self.add_node(clip, parent, insert_index)
+            insert_index += 1
+
+        el.attrib.pop("mix-blend-mode", None)
+        return True
+
+
+    def resolve_mix_blend_mode_color(self, el_blend_mode:BaseElement, el_clipped:BaseElement) -> None:
+        """
+        Resolve the clipping result's blend color while retaining a backdrop
+        gradient when present. Gradient stops are blended against samples of the
+        overlay paint; radial gradients use a representative point on each ring.
+        Solid-paint overlaps retain the existing single-color path.
+        """
+        blend_mode = (el_blend_mode.get("mix-blend-mode", "normal") or "normal").lower()
+        if blend_mode == "normal":
+            return
+
+        destination_gradient, _ = self.ref_target(
+            el_clipped,
+            "fill",
+            tag_name={"linearGradient", "radialGradient"},
+        )
+        if destination_gradient is not None:
+            blended_gradient = self._blend_gradient_stops(
+                el_blend_mode,
+                el_clipped,
+                destination_gradient,
+                blend_mode,
+            )
+            if blended_gradient is not None:
+                defs = self.ensure_defs()
+                self.add_node(blended_gradient, defs)
+                el_clipped.set("fill", self.node_or_id_to_url(blended_gradient))
+                el_clipped.set("stroke", "none")
+                el_clipped.attrib.pop("fill-opacity", None)
+                el_clipped.attrib.pop("stroke-opacity", None)
+                el_clipped.attrib.pop("mix-blend-mode", None)
+                return
+
+        overlay_gradient, _ = self.ref_target(
+            el_blend_mode,
+            "fill",
+            tag_name={"linearGradient", "radialGradient"},
+        )
+        if overlay_gradient is not None:
+            blended_gradient = self._blend_overlay_gradient_stops(
+                el_blend_mode,
+                el_clipped,
+                overlay_gradient,
+                blend_mode,
+            )
+            if blended_gradient is not None:
+                defs = self.ensure_defs()
+                self.add_node(blended_gradient, defs)
+                el_clipped.set("fill", self.node_or_id_to_url(blended_gradient))
+                el_clipped.set("stroke", "none")
+                el_clipped.attrib.pop("fill-opacity", None)
+                el_clipped.attrib.pop("stroke-opacity", None)
+                el_clipped.attrib.pop("mix-blend-mode", None)
+                return
+
+        src_rgba = self._paint_to_rgba(el_blend_mode, "fill")
+        if el_blend_mode is el_clipped:
+            dst_rgba = (1.0, 1.0, 1.0, 1.0)
+        else:
+            dst_rgba = self._paint_to_rgba(el_clipped, "fill", default=(1.0, 1.0, 1.0, 1.0))
+
+        result = self._blend_rgba(src_rgba, dst_rgba, blend_mode)
+        color = self.rgba_to_hex(result[0] * 255.0, result[1] * 255.0, result[2] * 255.0)
+
+        el_clipped.set("fill", color)
+        el_clipped.set("stroke", "none")
+        if self.options.strip_alpha or result[3] >= 1.0:
+            el_clipped.attrib.pop("fill-opacity", None)
+        else:
+            el_clipped.set("fill-opacity", str(result[3]))
+        el_clipped.attrib.pop("stroke-opacity", None)    
+        el_clipped.attrib.pop("mix-blend-mode", None)
+ 
+    # endregion
 
     # region --- Viewbox Translation ---
 

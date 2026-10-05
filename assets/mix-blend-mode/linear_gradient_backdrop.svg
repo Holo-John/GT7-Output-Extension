@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120" viewBox="0 0 200 120">
+  <defs>
+    <linearGradient id="backdrop" gradientUnits="userSpaceOnUse" x1="20" y1="20" x2="180" y2="20">
+      <stop offset="0" stop-color="#ff00ff"/>
+      <stop offset="1" stop-color="#0033ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="20" y="20" width="160" height="80" fill="url(#backdrop)"/>
+  <rect x="60" y="20" width="90" height="80" fill="#ff0000" style="mix-blend-mode:multiply"/>
+</svg>

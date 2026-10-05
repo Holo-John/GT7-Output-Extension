@@ -5,7 +5,7 @@
    viewBox="0 0 200 120"
    version="1.1"
    id="svg2"
-   sodipodi:docname="gradient.svg"
+   sodipodi:docname="multiple-gradients.svg"
    inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
@@ -15,6 +15,42 @@
   <defs
      id="defs2">
     <linearGradient
+       id="linearGradient7"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#00ff00;stop-opacity:1;"
+         offset="0"
+         id="stop8" />
+      <stop
+         style="stop-color:#ff1300;stop-opacity:1;"
+         offset="1"
+         id="stop9" />
+    </linearGradient>
+    <linearGradient
+       id="linearGradient6"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#ffff00;stop-opacity:1;"
+         offset="0"
+         id="stop6" />
+      <stop
+         style="stop-color:#ff1c00;stop-opacity:1;"
+         offset="1"
+         id="stop7" />
+    </linearGradient>
+    <linearGradient
+       id="linearGradient4"
+       inkscape:collect="always">
+      <stop
+         style="stop-color:#000080;stop-opacity:1"
+         offset="0"
+         id="stop4" />
+      <stop
+         style="stop-color:#00ffa1;stop-opacity:1;"
+         offset="1"
+         id="stop5" />
+    </linearGradient>
+    <linearGradient
        id="linearGradient2"
        inkscape:collect="always">
       <stop
@@ -22,7 +58,7 @@
          offset="0"
          id="stop2" />
       <stop
-         style="stop-color:#0033ff;stop-opacity:1;"
+         style="stop-color:#000bff;stop-opacity:1;"
          offset="1"
          id="stop3" />
     </linearGradient>
@@ -30,10 +66,39 @@
        inkscape:collect="always"
        xlink:href="#linearGradient2"
        id="linearGradient3"
-       x1="21.011013"
-       y1="20.570524"
-       x2="100"
-       y2="100.29606"
+       x1="20.14443"
+       y1="20.137234"
+       x2="150.55061"
+       y2="99.86277"
+       gradientUnits="userSpaceOnUse" />
+    <linearGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient4"
+       id="linearGradient5"
+       x1="71.409988"
+       y1="99.285049"
+       x2="150.9767"
+       y2="20.281664"
+       gradientUnits="userSpaceOnUse" />
+    <radialGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient6"
+       id="radialGradient7"
+       cx="150"
+       cy="50"
+       fx="150"
+       fy="50"
+       r="20"
+       gradientUnits="userSpaceOnUse" />
+    <radialGradient
+       inkscape:collect="always"
+       xlink:href="#linearGradient7"
+       id="radialGradient9"
+       cx="85.416138"
+       cy="60.144432"
+       fx="85.416138"
+       fy="60.144432"
+       r="30"
        gradientUnits="userSpaceOnUse" />
   </defs>
   <sodipodi:namedview
@@ -71,7 +136,7 @@
      width="80"
      height="80"
      fill="#ff0000"
-     style="mix-blend-mode:multiply" />
+     style="mix-blend-mode:multiply;fill:url(#linearGradient5)" />
   <!-- blend mode as ATTRIBUTE -->
   <circle
      id="attribute-blend"
@@ -79,7 +144,8 @@
      cy="60.144432"
      r="30"
      fill="#00ff00"
-     mix-blend-mode="screen" />
+     mix-blend-mode="screen"
+     style="fill:url(#radialGradient9)" />
   <!-- group level blend mode -->
   <g
      id="group-blend"
@@ -91,6 +157,7 @@
        width="40"
        height="40"
        fill="#ffff00"
-       id="rect2" />
+       id="rect2"
+       style="fill:url(#radialGradient7)" />
   </g>
 </svg>
