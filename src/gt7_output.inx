@@ -17,6 +17,7 @@
  -->
 
 <inkscape-extension xmlns="http://www.inkscape.org/namespace/inkscape/extension">
+  
   <name>GT7 Output</name>
   <id>gt7.output.output</id>
 
@@ -51,4 +52,5 @@
   <script>
     <command interpreter="python" location="inx">gt7_output.py</command>
   </script>
+
 </inkscape-extension>
