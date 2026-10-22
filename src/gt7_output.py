@@ -5873,7 +5873,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
 
         # Check presence of fill, stroke, and marker 
 
-        fill = (self.inherit_attribute(el, "fill") or "none").strip().lower()
+        fill = (self.inherit_attribute(el, "fill") or "black").strip().lower()
         fill_color, fill_alpha = self.parse_color(fill)
         if fill_alpha == 0:
             fill_pos = - 1
