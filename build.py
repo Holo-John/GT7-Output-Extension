@@ -78,6 +78,8 @@ def _get_version(release:bool=False) -> str:
             # v1.0.1 -> 1.0.1
             version = version.removeprefix("v")
 
+            print(f"Release version: {version}")
+
     except Exception as ex:
         print(f"Unable to determine version: {ex}")
         version = "dev"

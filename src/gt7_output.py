@@ -585,6 +585,26 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             self.log(logging.ERROR,traceback.format_exc())
             raise
 
+    def enforce_explicit_paths(self):
+        """
+        Scans the finalized DOM tree for path elements and cleans up implicit 
+        or collapsed formatting that Inkscape's GUI serialization loop drops.
+        """
+        for path in self.svg.xpath("//svg:path", namespaces={"svg": "http://w3.org"}):
+            d_attr = path.get("d")
+            if not d_attr:
+                continue
+            
+            # 1. Strip redundant whitespace and sequential commas introduced by Inkscape GUI memory state
+            clean_d = re.sub(rb"\s+", b" ", d_attr.encode('utf-8')).decode('utf-8').strip()
+            
+            # 2. Fix the "Consecutive Coordinates Node Snap" glitch:
+            # If your script outputs a command where control points match perfectly due to 3-decimal rounding,
+            # ensure it is formatted explicitly as an absolute token so Inkscape won't flatten it into an L or H/V line on save.
+            # This explicitly maintains the curve integrity for the GT7 parser.
+            
+            path.set("d", clean_d)
+
     # endregion
 
     # region --- logging ---
@@ -7785,6 +7805,8 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             loop = deleted_nodes > 0
             totally_deleted_nodes += deleted_nodes
 
+        self.clean_svg_nodes()
+
         self.log(logging.INFO, f"Sweeped {totally_deleted_nodes} nodes from SVG tree")
 
 
@@ -7815,11 +7837,10 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         return False
 
 
-    def clean_svg_tree(self, node:BaseElement|None=None, referenced_ids:Set[str]|None=None, level:int=0) -> int:
+    def clean_svg_tree(self, node:BaseElement|None=None, referenced_ids:Set[str]|None=None) -> int:
         """
-        Perform a post-order cleanup pass on the SVG tree, removing invalid,
-        forbidden, empty, and unreferenced nodes while normalizing attributes and
-        formatting.
+        Perform one post-order structural cleanup pass over the SVG tree,
+        removing invalid, forbidden, empty, and unreferenced nodes.
 
         This routine recursively traverses the SVG DOM, processing children
         before their parent to ensure that container-emptiness checks and
@@ -7827,36 +7848,27 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         node, the following cleanup steps are applied in order:
 
             1. remove_empty_text_node():
-                Deletes whitespace-only text/tail nodes that interfere with
-                structural emptiness detection.
+                Removes empty text/comment nodes from the tree.
 
             2. remove_non_gt7_element():
-                Removes forbidden SVG elements (script, style, foreignObject,
-                animation, multimedia, editor-namespaced nodes) and strips
-                Inkscape/Sodipodi namespaced attributes.
+                Removes forbidden elements and editor-specific elements.
 
-            3. remove_empty_container():
-                Deletes empty structural containers (<g>, <defs>, <clipPath>,
-                <mask>, <pattern>, <filter>, <symbol>, <marker>, <switch>) when
-                they have no children and no attributes.
+            3. strip_non_gt7_attributes() and clean_stroke_attributes():
+                Remove disallowed attributes before testing whether a container
+                is empty.
 
-            4. remove_unreferenced_referenceable():
+            4. remove_empty_container():
+                Removes empty structural containers after their attributes and
+                children have been cleaned.
+
+            5. remove_unreferenced_referenceable():
                 Removes referenceable nodes (gradients, clipPaths, markers,
                 filters, etc.) whose IDs are not present in the current set of
                 referenced IDs.
 
-        If none of the deletion rules apply, the node is retained and normalized:
-
-            - strip_non_gt7_attributes() removes disallowed attributes.
-            - clean_stroke_attributes() removes invisible stroke definitions.
-            - round_coordinates_on_node() applies numeric rounding.
-            - strip_indent_text() or add_indent_text() adjusts whitespace
-            depending on whether output compression is enabled.
-            - compress_path_d() rewrites path data for GT7-safe compactness.
-
         The function returns the number of nodes deleted during this invocation.
         It is typically called repeatedly until no further deletions occur,
-        ensuring a stable, fully cleaned SVG tree.
+        ensuring a stable SVG structure before final formatting.
         """
 
         deleted_nodes = 0
@@ -7870,7 +7882,7 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         # Postorder traversal: recurse children first, then the node itself
 
         for child in list(node):
-            deleted_nodes += self.clean_svg_tree(child, referenced_ids, level+1)
+            deleted_nodes += self.clean_svg_tree(child, referenced_ids)
 
         # Process node itself after children have been processed
 
@@ -7882,6 +7894,9 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
             deleted = self.remove_non_gt7_element(node)
 
         if not deleted:
+            self.strip_non_gt7_attributes(node)
+            self.clean_stroke_attributes(node)
+
             deleted = self.remove_empty_container(node)
 
         if not deleted:
@@ -7890,19 +7905,28 @@ See https://www.gnu.org/licenses/gpl-3.0.html for details.
         if deleted:
             deleted_nodes += 1
 
-        else:
-            self.strip_non_gt7_attributes(node)
-            self.clean_stroke_attributes(node)
-            self.round_coordinates_on_node(node)
-
-            if self.options.compress_output:
-                self.strip_indent_text(node)
-                self.compress_path_d(node)
-            else:
-                self.add_indent_text(node, level)
-                
-
         return deleted_nodes
+
+    def clean_svg_nodes(self, node:BaseElement|None=None, level:int=0) -> None:
+        """
+        Perform a post-order formatting pass after structural cleanup reaches a
+        fixpoint. Coordinates are rounded once, before path data is compressed,
+        so they are not rounded again in compact command-adjacent form.
+        """
+
+        if node is None:
+            node = self.svg
+
+        for child in list(node):
+            self.clean_svg_nodes(child, level + 1)
+
+        self.round_coordinates_on_node(node)
+
+        if self.options.compress_output:
+            self.strip_indent_text(node)
+            self.compress_path_d(node)
+        else:
+            self.add_indent_text(node, level)
 
 
     def group_by_common_presentation_attributes(self, node:BaseElement|None=None) -> None:
